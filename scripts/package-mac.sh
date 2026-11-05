@@ -29,9 +29,16 @@ RES="$APP/Contents/Resources"
 APPDIR="$RES/app"
 
 echo "== 1/8 环境检查"
-command -v node >/dev/null || { echo "没装 Node，先装一个（brew install node 或从 nodejs.org 下载）"; exit 1; }
-command -v npm  >/dev/null || { echo "没装 npm"; exit 1; }
-NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
+NODE_VER_NEEDED="24.22.0"
+if ! command -v node >/dev/null || ! command -v npm >/dev/null; then
+  echo "   本机没有 Node，临时下载一个（不改动系统，装在临时目录里）"
+  TMPN="$(mktemp -d)"
+  curl -fsSL "https://nodejs.org/dist/v$NODE_VER_NEEDED/node-v$NODE_VER_NEEDED-darwin-$ARCH.tar.gz" | tar -xz -C "$TMPN"
+  NODEDIR="$(ls -d "$TMPN"/node-v*-darwin-* | head -1)"
+  export PATH="$NODEDIR/bin:$PATH"
+  export npm_config_cache="$TMPN/npm-cache"
+fi
+command -v node >/dev/null || { echo "node 还是没起来，网络问题？"; exit 1; }
 echo "   node $(node -v) · npm $(npm -v) · $(uname -m) → $ARCH"
 
 echo "== 2/8 安装开发依赖（装过就很快）"
