@@ -1,0 +1,34 @@
+{
+  "name": "after-school",
+  "version": "0.1.0",
+  "private": true,
+  "description": "单老师课后服务/教培管理：学生、课时流水、排课、下课记一笔",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0 -p 3000",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/hours.test.ts tests/scheduling.test.ts tests/report.test.ts tests/token.test.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "next": "^15.5.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
+  }
+}
