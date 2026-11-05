@@ -5,6 +5,10 @@
 ```
 Launcher.cs   启动器源码（WinForms，单文件，编译后约 22 KB）
 使用说明.txt   随包发给用户的纯文本说明（打包时原样复制到 dist\ 下）
+mac/          macOS 版启动脚本（package-mac.sh 会把它们拷进 .app）
+  start.sh    双击 .app 时执行的启动器：挑端口 → nohup 起 next → 轮询 /api/health → open 浏览器
+  stop.sh     读 data/.pid 结束服务，兜底 pkill
+  停止课后服务.command  放在 .app 旁边的双击入口（内容与 stop.sh 同一套逻辑）
 ```
 
 ## 编译

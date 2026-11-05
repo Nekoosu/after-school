@@ -464,3 +464,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ui-check.ps1
 - 只导 `status <> 'cancelled'`；`DURATION:PT{n}M` 比 `DTEND` 省事；行必须 `\r\n` 分隔，`icsEsc()` 要转义 `\ ; , 换行`。
 
 **`POST /api/ai/models { base, key }`**：拉 `${base}/models`（15 秒 `AbortController` 超时），返回 `{ok, models, base}`；**所有失败都回 `ok({ok:false, error})`，不抛 500**（AI 是可选功能，不能因为模型名拉不到就让设置页崩）。前端用 `<input list="ai-model-options">` + `<datalist>`，自动套第一个模型名。
+
+## 28. macOS 版（为什么 Windows 出不了，以及 package-mac.sh 怎么打）
+
+**Windows 上产不出能跑的 Mac 包**，三个硬限制：① `better-sqlite3` 是原生模块，要 darwin-arm64/x64 的 prebuild，Windows 装不出来；② `.app` 里可执行文件靠权限位，Windows 的任何压缩工具都存不下 Unix 的 `x` 位，解压出来双击没反应；③ 无法实测。所以流程是：**Windows 写好脚本 → 在任意一台 Mac 上跑 `bash scripts/package-mac.sh`**（几分钟，现场装依赖、现场拿 darwin 原生模块），产物 `build/mac/课后服务管理.app` 与 `release/after-school-<版本>-macos-<arm64|x64>.tar.gz`。
+
+`scripts/package-mac.sh` 八步：环境检查（`uname -m` 定 arm64/x64，版本号从 `src/lib/version.ts` grep）→ `npm install` → `npx next build` → 组装 `.app`（复制 `.next` 去 cache/trace、`public` 去 README.md，写运行期 `package.json` 与 `next.config.js`）→ `npm install --omit=dev`（**不要 `--ignore-scripts`**，better-sqlite3 靠 prebuild-install 下载 darwin 版；没有 prebuild 就 `npm rebuild --build-from-source`，需要 `xcode-select --install`）→ node 可执行文件（本机 `file $(command -v node)` 是 Mach-O 就直接拷，否则从 nodejs.org 下载 darwin tar 解出 `bin/node`）→ 拷 `launcher/mac/start.sh`/`stop.sh`、写 `Info.plist`（`LSUIElement true` 不占 Dock、`CFBundleExecutable start`）、`sips`+`iconutil` 从 `public/app-icon.png` 生成 `app-icon.icns` → `tar -czf`（**必须 tar 不能 zip**，只有 tar 保权限位）。
+
+- `launcher/mac/start.sh` 与 Windows 的 `Launcher.cs` 职责一致：读 `data/.port` 已在跑就 `open` 浏览器；`lsof -nP -iTCP:$p -sTCP:LISTEN` 从 3210 起挑端口；`NODE_ENV=production nohup "$NODE" .../next start -H 127.0.0.1 -p $PORT >> data/server.log 2>&1 &` + `disown`；pid/port 写 `data/.pid`/`.port`；`curl` 轮询 `/api/health` 90 秒；成功 `open` + `osascript display notification`，失败 `display alert` 指向日志。
+- 退出不走 Dock（`LSUIElement` 隐藏了），靠包外的 `停止课后服务.command`（读 `.pid` kill，兜底 `pkill -f` 只匹配本 .app 的 next 路径）。
+- 用户侧第一次会被 Gatekeeper 拦（无签名）：右键 → 打开，或 `xattr -dr com.apple.quarantine`。
+- 语法检查可用本机 cygwin bash：`E:\tools\PortableGit\bin\bash.exe -n <脚本>`；**脚本必须 LF 行尾**（cygwin bash 对 CRLF 报 `$'\r'`）。

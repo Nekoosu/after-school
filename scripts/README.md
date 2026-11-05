@@ -46,6 +46,7 @@ powershell -ExecutionPolicy Bypass -File scripts\ui-check.ps1
 | `cdp-err.mjs` | 抓控制台异常与 `body.innerText`，专门用来查白屏 |
 | `seed-demo.mjs` | 灌一套演示数据（三个学生、两门课、六节课、四条学情） |
 | `package.ps1` | 打包成 `dist\`（8 步：build → 复制 → 装运行期依赖 → 塞原生模块 → 内置 node → 编启动器 → 拷说明） |
+| `package-mac.sh` | **在 Mac 上跑**：`bash scripts/package-mac.sh` → 组装 `课后服务管理.app` 并压成 `release/after-school-<版本>-macos-<arm64\|x64>.tar.gz`（8 步；better-sqlite3 必须现场拿 darwin 版，权限位靠 mac 的 tar） |
 
 ## 两个坑
 
