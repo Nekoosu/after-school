@@ -49,7 +49,7 @@
 **下载**：[最新版本](https://github.com/Nekoosu/after-school/releases/latest)
 
 - Windows：拿 `after-school-<版本号>.zip`（例如 `after-school-1.5.0.zip`）
-- macOS：拿 `after-school-<版本号>-macos-arm64.tar.gz`（Apple Silicon：M1/M2/M3/M4；Intel 的机器拿 `-macos-x64.tar.gz`）
+- macOS（M1/M2/M3/M4）：拿 `after-school-<版本号>-macos-arm64.dmg`；只有 Intel Mac 才拿 `-macos-x64.dmg`
 
 **Windows**
 
@@ -59,8 +59,8 @@
 
 **macOS**
 
-1. 解压出来是 `课后服务管理.app` + `停止课后服务.command` + `使用说明.txt`。
-2. 第一次双击 .app 大概率会被 Gatekeeper 拦住（没有苹果开发者签名），在 .app 上**右键 → 打开 → 再点打开**一次就行；嫌麻烦可以在终端跑 `xattr -dr com.apple.quarantine 课后服务管理.app`。
+1. 打开 `.dmg`，把里面的 `课后服务管理.app` 拖到「应用程序」，把 `停止课后服务.command`、`使用说明.txt` 留在同一个文件夹或桌面（退出要用它）。
+2. 第一次双击 .app 大概率会被 Gatekeeper 拦住（没有苹果开发者签名），在 .app 上**右键 → 打开 → 再点打开**一次就行；嫌麻烦可以在终端跑 `xattr -dr com.apple.quarantine /Applications/课后服务管理.app`。
 3. 之后双击 .app 就是启动（浏览器自动打开），双击 `停止课后服务.command` 才是退出。数据在 `课后服务管理.app/Contents/Resources/app/data/`。
 
 只监听 `127.0.0.1`，同一局域网的其它电脑打不开——这是有意的。
@@ -103,7 +103,7 @@ Compress-Archive -Path dist\* -DestinationPath release\after-school-1.5.0.zip
 ```
 
 然后传到 GitHub Releases，tag 用 `v1.5.0`、文件名按 `项目名-版本号[平台].压缩包`：
-Windows 是 `after-school-1.5.0.zip`，macOS 是 `after-school-1.5.0-macos-arm64.tar.gz`（Intel 机器 `-macos-x64`）。
+Windows 是 `after-school-1.5.0.zip`，macOS 是 `after-school-1.5.0-macos-arm64.dmg`（Intel 机器 `-macos-x64`）。
 以后每个版本都按这套命名，下载链接永远指向 [releases/latest](https://github.com/Nekoosu/after-school/releases/latest)。
 
 ## 技术栈

@@ -145,6 +145,14 @@ rm -f "$TARBALL"
 tar -czf "$TARBALL" -C "$OUT" "$APPNAME.app" "使用说明.txt" "停止课后服务.command"
 SIZE="$(du -sh "$TARBALL" | cut -f1)"
 
+# .dmg 只能在 Mac 上生成（hdiutil 是 macOS 自带的）；这里顺手就打一个
+if command -v hdiutil >/dev/null; then
+  DMG="release/after-school-$VERSION-macos-$ARCH.dmg"
+  rm -f "$DMG"
+  hdiutil create -volname "$APPNAME" -srcfolder "$OUT" -ov -format UDZO "$DMG" >/dev/null
+  echo "DONE   $DMG  ($(du -sh "$DMG" | cut -f1))"
+fi
+
 echo ""
 echo "DONE   $TARBALL  ($SIZE)"
 echo "双击 $APPNAME.app 即可使用；第一次如被拦住：右键 →「打开」，或运行"
