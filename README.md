@@ -86,7 +86,7 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1
 
 ```bash
 # macOS：在任意 Mac 上跑一次，产出 build/mac/课后服务管理.app
-#       与 release/after-school-<版本>-macos-<arm64|x64>.tar.gz
+#       与 release/mac/after-school-<版本>-macos-<arm64|x64>.tar.gz（有 hdiutil 时还有 .dmg）
 bash scripts/package-mac.sh
 ```
 
@@ -95,11 +95,12 @@ macOS 的包必须在那台 Mac 上打——better-sqlite3 是原生模块，要
 
 ## 发布（版本号与压缩包命名）
 
-版本号只改一处：`src/lib/version.ts` 的 `APP_VERSION`。打包后按 `项目名-版本号.zip` 命名，例如：
+版本号只改一处：`src/lib/version.ts` 的 `APP_VERSION`。打包后按 `项目名-版本号.zip` 命名，
+**本地 `release\` 分两个子文件夹：`windows\` 放 Windows 的、`mac\` 放 macOS 的**，例如：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\package.ps1
-Compress-Archive -Path dist\* -DestinationPath release\after-school-1.5.0.zip
+Compress-Archive -Path dist\* -DestinationPath release\windows\after-school-1.5.0.zip
 ```
 
 然后传到 GitHub Releases，tag 用 `v1.5.0`、文件名按 `项目名-版本号[平台].压缩包`：

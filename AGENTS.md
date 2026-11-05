@@ -438,7 +438,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ui-check.ps1
 
 **发布流程（1.5.0 起固定）：**
 
-- `scripts/package.ps1` → `Compress-Archive dist\* release\after-school-<版本>.zip`（**压缩包名 = 项目名-版本号**，用户定的规矩，以后每个版本都这么命名）→ GitHub API 建 release（tag `v<版本>`，POST `/repos/Nekoosu/after-school/releases`）→ 用 `curl.exe -x http://127.0.0.1:7899 --data-binary "@release\xxx.zip"` 传到 `uploads.github.com`。`release/` 已进 `.gitignore`。
+- `scripts/package.ps1` → `Compress-Archive dist\* release\windows\after-school-<版本>.zip`（**压缩包名 = 项目名-版本号，本地 `release\` 分 `windows\` 与 `mac\` 两个子文件夹**，用户定的规矩，以后每个版本都这么命名）→ GitHub API 建 release（tag `v<版本>`，POST `/repos/Nekoosu/after-school/releases`）→ 用 `curl.exe -x http://127.0.0.1:7899 --data-binary "@release\windows\xxx.zip"`（mac 包在 `release\mac\`）传到 `uploads.github.com`。`release/` 已进 `.gitignore`。
 - README「直接使用」段放 [releases/latest](https://github.com/Nekoosu/after-school/releases/latest) 链接并写明命名规则。
 
 **内置使用说明（`/manual`）：**
@@ -467,7 +467,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ui-check.ps1
 
 ## 28. macOS 版（为什么 Windows 出不了，以及 package-mac.sh 怎么打）
 
-**Windows 上产不出能跑的 Mac 包**，三个硬限制：① `better-sqlite3` 是原生模块，要 darwin-arm64/x64 的 prebuild，Windows 装不出来；② `.app` 里可执行文件靠权限位，Windows 的任何压缩工具都存不下 Unix 的 `x` 位，解压出来双击没反应；③ 无法实测。所以流程是：**Windows 写好脚本 → 在任意一台 Mac 上跑 `bash scripts/package-mac.sh`**（几分钟，现场装依赖、现场拿 darwin 原生模块），产物 `build/mac/课后服务管理.app` 与 `release/after-school-<版本>-macos-<arm64|x64>.tar.gz`。
+**Windows 上产不出能跑的 Mac 包**，三个硬限制：① `better-sqlite3` 是原生模块，要 darwin-arm64/x64 的 prebuild，Windows 装不出来；② `.app` 里可执行文件靠权限位，Windows 的任何压缩工具都存不下 Unix 的 `x` 位，解压出来双击没反应；③ 无法实测。所以流程是：**Windows 写好脚本 → 在任意一台 Mac 上跑 `bash scripts/package-mac.sh`**（几分钟，现场装依赖、现场拿 darwin 原生模块），产物 `build/mac/课后服务管理.app` 与 `release/mac/after-school-<版本>-macos-<arm64|x64>.tar.gz`。
 
 `scripts/package-mac.sh` 八步：环境检查（`uname -m` 定 arm64/x64，版本号从 `src/lib/version.ts` grep）→ `npm install` → `npx next build` → 组装 `.app`（复制 `.next` 去 cache/trace、`public` 去 README.md，写运行期 `package.json` 与 `next.config.js`）→ `npm install --omit=dev`（**不要 `--ignore-scripts`**，better-sqlite3 靠 prebuild-install 下载 darwin 版；没有 prebuild 就 `npm rebuild --build-from-source`，需要 `xcode-select --install`）→ node 可执行文件（本机 `file $(command -v node)` 是 Mach-O 就直接拷，否则从 nodejs.org 下载 darwin tar 解出 `bin/node`）→ 拷 `launcher/mac/start.sh`/`stop.sh`、写 `Info.plist`（`LSUIElement true` 不占 Dock、`CFBundleExecutable start`）、`sips`+`iconutil` 从 `public/app-icon.png` 生成 `app-icon.icns` → `tar -czf`（**必须 tar 不能 zip**，只有 tar 保权限位）。
 
@@ -475,6 +475,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ui-check.ps1
 - 退出不走 Dock（`LSUIElement` 隐藏了），靠包外的 `停止课后服务.command`（读 `.pid` kill，兜底 `pkill -f` 只匹配本 .app 的 next 路径）。
 - 用户侧第一次会被 Gatekeeper 拦（无签名）：右键 → 打开，或 `xattr -dr com.apple.quarantine`。
 - 语法检查可用本机 cygwin bash：`E:\tools\PortableGit\bin\bash.exe -n <脚本>`；**脚本必须 LF 行尾**（cygwin bash 对 CRLF 报 `$'\r'`）。
-- **`.dmg` 只能在 Mac 上生成**（`hdiutil` 是系统自带、无 Windows 替代）：`package-mac.sh` 第 8 步会顺手打一个 `release/after-school-<版本>-macos-<arch>.dmg`，给用户的正式包是这个 dmg，tar.gz 只是备胎。
+- **`.dmg` 只能在 Mac 上生成**（`hdiutil` 是系统自带、无 Windows 替代）：`package-mac.sh` 第 8 步会顺手打一个 `release/mac/after-school-<版本>-macos-<arch>.dmg`，给用户的正式包是这个 dmg，tar.gz 只是备胎。
 
 **没有 Mac 时的「盲拼」路径（做过了，结构可验证、运行不可验证）**：① `curl -L -o node-darwin-arm64.tar.gz https://nodejs.org/dist/v24.22.0/node-v24.22.0-darwin-arm64.tar.gz`（注意 Windows `tar --strip-components` 与成员选择不能同时用，整包解开再拷 `bin/node`；里面的 `npm`/`npx`/`corepack` 是符号链接，Windows 解不出来，会报 `Invalid argument`，不影响）；② better-sqlite3 用 `https://github.com/WiseLibs/better-sqlite3/releases/download/v12.11.1/better-sqlite3-v12.11.1-node-v137-darwin-arm64.tar.gz`（`node-v137` 就是 Node 24 的 ABI），解出的 `build/Release/better_sqlite3.node` 放进运行期 `node_modules`；③ 运行期依赖用 `npm install --omit=dev --os=darwin --cpu=arm64 --ignore-scripts` 装（npm 11 认 `--os`/`--cpu`，能拿到 `@next/swc-darwin-arm64`、不会拉 win32 的）；④ 压缩方式**决定能不能用**：Windows 的 `Compress-Archive` 不写 Unix 权限位，解压后双击没反应——要用 Python `zipfile` 自己写 `external_attr = ((mode|S_IFREG) << 16)`、`create_system = 3`，给 `Contents/MacOS/{start,stop}`、`node`、`停止课后服务.command` 记 `0o755`（脚本在 `.macbuild/pack-zip.py`）；⑤ 结构验证：两个二进制魔数必须是 `CF FA ED FE`（arm64 Mach-O），zip 里再抽查权限位。

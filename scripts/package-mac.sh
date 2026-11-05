@@ -6,7 +6,7 @@
 #
 # 它做的事：构建 → 在本机装运行期依赖（better-sqlite3 会下载/编译出 darwin 版）→
 #           组装成「课后服务管理.app」→ 打好 tar.gz 放到 release/
-# 产物：release/after-school-<版本>-macos-<arm64|x64>.tar.gz
+# 产物：release/mac/after-school-<版本>-macos-<arm64|x64>.tar.gz
 
 set -euo pipefail
 
@@ -139,15 +139,15 @@ cp launcher/mac/停止课后服务.command "$OUT/停止课后服务.command"
 chmod +x "$OUT/停止课后服务.command"
 
 echo "== 8/8 打包"
-mkdir -p release
-TARBALL="release/after-school-$VERSION-macos-$ARCH.tar.gz"
+mkdir -p release/mac
+TARBALL="release/mac/after-school-$VERSION-macos-$ARCH.tar.gz"
 rm -f "$TARBALL"
 tar -czf "$TARBALL" -C "$OUT" "$APPNAME.app" "使用说明.txt" "停止课后服务.command"
 SIZE="$(du -sh "$TARBALL" | cut -f1)"
 
 # .dmg 只能在 Mac 上生成（hdiutil 是 macOS 自带的）；这里顺手就打一个
 if command -v hdiutil >/dev/null; then
-  DMG="release/after-school-$VERSION-macos-$ARCH.dmg"
+  DMG="release/mac/after-school-$VERSION-macos-$ARCH.dmg"
   rm -f "$DMG"
   hdiutil create -volname "$APPNAME" -srcfolder "$OUT" -ov -format UDZO "$DMG" >/dev/null
   echo "DONE   $DMG  ($(du -sh "$DMG" | cut -f1))"
