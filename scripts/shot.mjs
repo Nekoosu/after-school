@@ -34,6 +34,8 @@ const pages = [
   { name: "11-manual-mobile", path: "/manual", w: 520, h: 900 },
   // 侧边栏收起的样子：先写 localStorage 再重载，拍出来才是「记忆过的」状态
   { name: "12-collapsed", path: "/calendar", w: 1440, h: 900, collapse: true },
+  // 快捷键说明面板（点顶栏的 ⓘ）
+  { name: "13-shortcuts", path: "/", w: 1440, h: 1000, act: 'document.querySelector(\'button[aria-label="快捷键说明"]\').click()' },
 ];
 
 const child = spawn(
@@ -104,6 +106,11 @@ for (const p of pages.filter((x) => ONLY.length === 0 || ONLY.includes(x.name)))
       expression: "localStorage.setItem('as-nav-collapsed','1'); location.reload();",
     });
     await sleep(2600);
+  }
+  // act: 截图前先跑一段 JS（点开某个面板、切到某个 Tab），方便拍「打开状态」
+  if (p.act) {
+    await send("Runtime.evaluate", { expression: p.act });
+    await sleep(900);
   }
   // 想拍页面下半截就加 scroll: 像素数（截图前先滚下去）
   if (p.scroll) {
