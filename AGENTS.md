@@ -533,3 +533,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ui-check.ps1
 - 首页原来那排 `Stat` 仍然保留在 hero 下面，hero 只负责"今天几节课 + 本周节奏 + 三个动作"。
 
 **落款（`src/lib/report.ts` 的 `signLine`）**：机构、老师都可能没填，规则是"都没填 → 空行；只有机构 → 只写机构；都有 → 全角空格连接"。别再用 `${org}　${teacher || "老师"}`，会写出"XX 中心　老师"这种别扭落款。`tests/report.test.ts` 里有三条测试盯着它（注意该文件里 `base.orgName` 是「星星课后服务中心」、`toneInput()` 里是「天凉课后服务」，断言别写串）。
+
+## 32. 「像软件」的地基：主题 token、快捷宫格、换页淡入（1.6.3）
+
+用户的意见是「切换主题的时候应该都变化，而不是一直都是深色的」——根因就是大卡里写死了深色。**规则：任何新 UI 只准用 token，不准写 `#fff`、`rgba(255,255,255,…)`、`#fafbfc` 这类字面色。**
+
+- **大卡（`.hero`）专用 token**（`:root` 里定义、`:root[data-theme="dark"]` 里覆盖同一批）：`--hero-bg`（浅色是 `linear-gradient(118deg,#e5ecfc,#f3f7ff 46%,#eee9fe)`，深色是 `#18213a→#101728→#141b2e`）、`--hero-line`、`--hero-ink`、`--hero-ink-2`、`--hero-bar`、`--hero-bar-line`、`--hero-glow`、`--hero-btn-bg`、`--hero-btn-line`、`--hero-btn-ink`。`.hero / .hero::after / .hero-kicker / .hero-title / .hero-sub / .hero-actions .btn / .hero-side-head / .wb*` 全部走这些变量，并加 `transition: background-color/border-color/color .24s var(--ease)`，切主题才有"整块跟着变"的过渡。
+- **首页六格快捷入口**（`.quick-grid` > `.quick-tile`）：排一节课 / 上课记录 / 收款与课时 / 家长反馈 / 学生名册 / 月报，`tone-*` 类控制图标底色（`--ok/--warn/--violet/--cyan` 的 `-weak`）。6 列 → `@media (max-width:1080px)` 3 列 → 620px 2 列；hover 只抬 `translateY(-2px)` + `--sh-3`，别做缩放。
+- **换页淡入**：`src/components/AppShell.tsx` 的 `<main className="content">` 里包一层 `<div className="page-enter" key={pathname}>`，靠 `key` 让每次改路由重新挂载，`.page-enter { animation: pageIn .24s var(--ease) both }`（opacity + `translateY(6px)`）。`@media (prefers-reduced-motion: reduce)` 里关掉。
+- **丝滑三件套**：`html/body` 背景色与文字色过渡 `.22s`；`.card/.btn/.input/.chip/.tab/.nav-item/.topbar/.sidebar/.tabbar/.modal-card/.drawer` 只过渡颜色类属性（不要 `transition: all`）；细滚动条 `scrollbar-width: thin` + `::-webkit-scrollbar` 10px，thumb 用 `--line-3`、hover `--ink-4`，`border: 2px solid transparent; background-clip: padding-box` 才有呼吸感。
+- **深色下的白底一律用 `color-mix` 消掉**，例如 `.att-row.present { background: color-mix(in srgb, var(--ok) 7%, var(--surface)); border-color: color-mix(in srgb, var(--ok) 34%, var(--line)); }`、`.btn-danger` 的底/描边同理。日历里 `.day-body.empty`、`.day-head.today .day-count` 这种"浅色下很自然"的白，`globals.css` 末尾还有一块 `:root[data-theme="dark"]` 兜底，改日历样式时一起看。
+
+**验证深色别靠眼睛**：截图缩略图会把 `#1a1f27` 看成白色。用像素采样：
+
+```powershell
+Add-Type -AssemblyName System.Drawing
+$img = [System.Drawing.Bitmap]::FromFile("E:\after-school\.shots\v163d-dark\02-calendar.png")
+$img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
+```
+
+截图脚本也扩了：`scripts\shot.mjs` 认环境变量 `SHOT_ONLY=01-today,02-calendar`（只拍这几页）和 `SHOT_DARK=1`（写 `localStorage["as-theme"]="dark"` 再重载，拍完会自动改回 light，免得污染下一次）。

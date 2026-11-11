@@ -12,6 +12,10 @@ const PROFILE = "E:\\after-school\\.edge-shot";
 
 mkdirSync(OUT, { recursive: true });
 
+// 想只拍某几张：SHOT_ONLY=01-today,07-mobile
+// 想拍深色主题：SHOT_DARK=1
+const ONLY = (process.env.SHOT_ONLY || "").split(",").filter(Boolean);
+const DARK = process.env.SHOT_DARK === "1";
 const pages = [
   { name: "01-today", path: "/", w: 1440, h: 1000 },
   { name: "02-calendar", path: "/calendar", w: 1440, h: 1000 },
@@ -71,11 +75,23 @@ const send = (method, params = {}) =>
 
 await send("Page.enable");
 
-for (const p of pages) {
+for (const p of pages.filter((x) => ONLY.length === 0 || ONLY.includes(x.name))) {
   await send("Emulation.setDeviceMetricsOverride", { width: p.w, height: p.h, deviceScaleFactor: 1, mobile: p.w < 700 });
   // SHOT_SHARE 可以给完整 URL（演示数据打印出来的就是完整链接），也可以只给路径
   await send("Page.navigate", { url: /^https?:\/\//.test(p.path) ? p.path : BASE + p.path });
   await sleep(2200);
+  // 想拍深色主题就切过去再重载（主题存在 localStorage 里）
+  if (DARK || p.dark) {
+    await send("Runtime.evaluate", {
+      expression: "localStorage.setItem('as-theme','dark'); location.reload();",
+    });
+    await sleep(2400);
+  } else {
+    await send("Runtime.evaluate", {
+      expression: "if (localStorage.getItem('as-theme') === 'dark') { localStorage.setItem('as-theme','light'); location.reload(); }",
+    });
+    await sleep(600);
+  }
   // 想拍「侧边栏收起」：先写本地记忆，再整页重载，才是真实效果
   if (p.collapse) {
     await send("Runtime.evaluate", {

@@ -337,6 +337,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
           ) : null}
           <div className="topbar-crumb">
+            <span className="topbar-app">课后服务管理</span>
+            <i className="crumb-sep" />
             <b>{titleOf(pathname)}</b>
           </div>
 
@@ -360,7 +362,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="content">{children}</main>
+        <main className="content">
+          <div className="page-enter" key={pathname}>
+            {children}
+          </div>
+        </main>
       </div>
 
       <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />

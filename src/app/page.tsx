@@ -196,6 +196,51 @@ export default function TodayPage() {
         </div>
       </div>
 
+      <div className="quick-grid">
+        <Link href="/calendar?new=1" className="quick-tile">
+          <span className="qt-icon">
+            <Icon name="calendar" size={16} />
+          </span>
+          <span className="qt-name">排一节课</span>
+          <span className="qt-sub">学生和老师撞车都会提醒</span>
+        </Link>
+        <Link href="/records" className="quick-tile tone-ok">
+          <span className="qt-icon">
+            <Icon name="edit" size={16} />
+          </span>
+          <span className="qt-name">上课记录</span>
+          <span className="qt-sub">已上过哪几节、学情都在这里</span>
+        </Link>
+        <Link href="/finance" className="quick-tile tone-warn">
+          <span className="qt-icon">
+            <Icon name="wallet" size={16} />
+          </span>
+          <span className="qt-name">收款与课时</span>
+          <span className="qt-sub">充值、赠送、请假扣减</span>
+        </Link>
+        <Link href="/feedback" className="quick-tile tone-violet">
+          <span className="qt-icon">
+            <Icon name="message" size={16} />
+          </span>
+          <span className="qt-name">家长反馈</span>
+          <span className="qt-sub">按课生成，改两句就能发</span>
+        </Link>
+        <Link href="/students" className="quick-tile">
+          <span className="qt-icon">
+            <Icon name="users" size={16} />
+          </span>
+          <span className="qt-name">学生名册</span>
+          <span className="qt-sub">多科课时与记录都在一处</span>
+        </Link>
+        <Link href="/monthly" className="quick-tile tone-cyan">
+          <span className="qt-icon">
+            <Icon name="chart" size={16} />
+          </span>
+          <span className="qt-name">月报</span>
+          <span className="qt-sub">这个月上了多少、收了多少</span>
+        </Link>
+      </div>
+
       {pendingRecord.length > 0 && (
         <div className="warn-box" style={{ marginBottom: 14 }}>
           <Icon name="alert" size={16} />

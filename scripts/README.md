@@ -41,7 +41,7 @@ powershell -ExecutionPolicy Bypass -File scripts\ui-check.ps1
 
 | 脚本 | 用途 |
 | --- | --- |
-| `shot.mjs` | 无头浏览器截图（支持 `collapse`、`scroll`、`SHOT_SHARE`），产物到 `.shots\pack\` |
+| `shot.mjs` | 无头浏览器截图（支持 `collapse`、`scroll`、`SHOT_SHARE`，以及 `SHOT_ONLY=01-today,02-calendar` 只拍指定的几页、`SHOT_DARK=1` 拍深色版并自动改回浅色），产物到 `.shots\pack\` |
 | `evaljs.mjs` | 在页面里跑一段 JS 并打印结果（量高度、看 computed style）；表达式含引号就写文件用 `@路径` 传 |
 | `cdp-err.mjs` | 抓控制台异常与 `body.innerText`，专门用来查白屏 |
 | `seed-demo.mjs` | 灌一套演示数据（三个学生、两门课、六节课、四条学情） |
