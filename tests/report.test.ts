@@ -146,3 +146,20 @@ test("语气：单节课版开头跟着变", () => {
   assert.ok(buildLessonReport({ ...base, tone: "warm" }).includes("辛苦您在家也多鼓励"));
   assert.ok(buildLessonReport(base).startsWith("王浩然 家长您好："));
 });
+
+test("落款：没填老师就只写机构", () => {
+  const r = buildReport({ ...toneInput("plain"), teacherName: "" });
+  assert.ok(r.trim().endsWith("天凉课后服务"), r.slice(-40));
+  assert.ok(!r.includes("天凉课后服务　老师"), "不该出现「机构　老师」");
+});
+
+test("落款：只填老师就只写老师", () => {
+  const r = buildReport({ ...toneInput("plain"), orgName: "" });
+  assert.ok(r.trim().endsWith("张老师"), r.slice(-40));
+});
+
+test("落款：单节课版同样不写空老师", () => {
+  const r = buildLessonReport({ ...base, teacherName: "" });
+  assert.ok(!r.includes("老师老师"), r.slice(-60));
+  assert.ok(r.trim().endsWith("星星课后服务中心"), r.slice(-40));
+});

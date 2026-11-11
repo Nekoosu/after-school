@@ -135,9 +135,18 @@ export function buildReport(i: ReportInput): string {
   else if (brief) out.push("有需要随时联系我。");
   else out.push("有什么想法随时联系我，谢谢您。");
   out.push("");
-  out.push(`${i.orgName}　${i.teacherName || "老师"}`);
+  out.push(signLine(i.orgName, i.teacherName));
 
   return out.join("\n");
+}
+
+/** 落款：机构 + 老师；没填老师就只写机构，别凑出「XX 中心　老师」这种别扭写法 */
+function signLine(orgName: string, teacherName: string): string {
+  const org = (orgName ?? "").trim();
+  const who = (teacherName ?? "").trim();
+  if (!who) return org;
+  if (!org) return who;
+  return `${org}　${who}`;
 }
 
 /** 一条学情记录在列表里的一行字 */
@@ -238,6 +247,6 @@ export function buildLessonReport(i: LessonReportInput): string {
   else if (tone === "brief") out.push("有需要随时联系我。");
   else out.push("有想问的随时跟我说，谢谢您。");
   out.push("");
-  out.push(`${i.orgName}　${i.teacherName || "老师"}`);
+  out.push(signLine(i.orgName, i.teacherName));
   return out.join("\n");
 }

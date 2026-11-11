@@ -45,7 +45,7 @@ powershell -ExecutionPolicy Bypass -File scripts\ui-check.ps1
 | `evaljs.mjs` | 在页面里跑一段 JS 并打印结果（量高度、看 computed style）；表达式含引号就写文件用 `@路径` 传 |
 | `cdp-err.mjs` | 抓控制台异常与 `body.innerText`，专门用来查白屏 |
 | `seed-demo.mjs` | 灌一套演示数据（三个学生、两门课、六节课、四条学情） |
-| `smoke15.mjs` | 1.6.0 新功能：老师档案/老师冲突/课消单价四级匹配/学生多科课表/`/api/shutdown` 只认 `AS_LAUNCHED`（42+ 条断言） |
+| `smoke15.mjs` | 老师档案/老师冲突/课消单价四级匹配/学生多科课表/`/api/shutdown` 只认 `AS_LAUNCHED`（45 条断言；日期避开其他冒烟，用 +32 天） |
 | `smoke-all.ps1` | 清库 → 起 3319 → 依次跑 smoke2~15 → 汇总通过数与失败数 → 停服务（一次跑全量用这个） |
 | `package.ps1` | 打包成 `dist\`（8 步：build → 复制 → 装运行期依赖 → 塞原生模块 → 内置 node → 编启动器 → 拷说明） |
 

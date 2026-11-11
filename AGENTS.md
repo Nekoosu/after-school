@@ -505,3 +505,31 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ui-check.ps1
 - 前端要告诉用户在等什么：`wrap` 页按钮旁小字在 `busy && useAi` 时显示「AI 正在写，接口慢的时候要等一两分钟…」，`plans` 页同理。
 
 **血泪教训：不要用 PowerShell 改含中文的源文件。** `(Get-Content -Raw $f) -replace 'a','b' | Set-Content $f -Encoding UTF8` 在 PS 5.1 里按 GBK 读，会把整份 UTF-8 中文变成乱码（`鍙仛銆屾妸璇濊鏄庣櫧`）并吃掉换行，源码直接坏掉——这次坏了三个文件，只能 `git checkout --` 还原。改源码只用 write/edit 工具；`Select-String`/`Get-Content` 只用来读。
+
+## 31. 启动画面、首页大卡、退出即保存（1.6.2）
+
+这一批解决的是"像个软件"和"不怕关窗"两件事，改动集中在三处。
+
+**启动画面（`launcher/Launcher.cs` 里的 `class SplashForm : Form`，C# 5 自绘）**
+
+- 不用图片、不用 WPF：`FormBorderStyle.None` + `Opacity` 淡入（`System.Windows.Forms.Timer`，33ms，`opacity += 0.14`，到 1 停表），`OnShown` 里 `Region = new Region(Path(rect, 18))` 做圆角。所有视觉都在 `OnPaint` 里画：115° 线性渐变底、图标光晕、圆角图标块（有 `public\app.ico` 就 `SetClip` 后 `DrawIcon`，没有就渐变底 + 白「课」）、绕图标的旋转弧（`phase*70%360`，**先画弧再画图标**，否则弧压在图标上很难看）。
+- 进度条是"不确定态"：一条 128px 的胶囊用 `u=(phase*0.42)%2` 来回扫，`eased = 0.5-0.5*cos(π*t)` 让两端减速。启动时长不可预知，**不要做百分比**。
+- `Timer` 必须写全名 `System.Windows.Forms.Timer`：只写 `Timer` 会与 `System.Threading.Timer` 二义，报 `error CS0104`。
+- `SetStatus` 会被后台线程调用，必须 `InvokeRequired` → `BeginInvoke`；`FadeOutAndClose()` 只置 `closing = true`，由 tick 把 `opacity` 降到 0 再 `Close()`，不要在别处直接 `Close()`。
+- 留了调试入口：`Launcher.exe --splash` 只显示启动画面 4 秒就淡出、**不启动服务**，方便截图（无边框窗口的 `MainWindowHandle` 常年是 0，要按 pid 用 `EnumWindows` 找窗口）。编译记得 `/codepage:65001`，否则 C# 里的中文注释/字符串在部分环境下会乱。
+
+**退出即保存（三道保险，缺一不可）**
+
+1. `src/db/index.ts` 里 `db.pragma("synchronous = FULL")`——WAL 下显式 FULL，已提交的事务一定落盘，断电/强杀不丢。
+2. `src/app/api/shutdown/route.ts` 先 `makeBackup("auto")` 留一份快照，再 `wal_checkpoint(TRUNCATE)`，然后 `process.exit(0)`。这个接口只认 `process.env.AS_LAUNCHED === "1"`（启动器会设），浏览器里手动调是 403。
+3. `AS_LAUNCHED` 环境下注册 `exit` / `SIGINT` / `SIGTERM` / `SIGHUP` → `flush()`（checkpoint），被 Ctrl+C 或任务管理器结束也能收尾。
+
+前端另有一层：记一笔页把没提交的勾选和笔记写进 `localStorage`，key 是 `as-draft-lesson-<lessonId>`，值是 `{ ids, rows, at }`；挂载时只有 `ids` 与当前学生列表对得上才恢复（避免串到别的课），`finish()` 成功后立刻删掉。**`ids` 这个校验别省**——同一浏览器里换一节课，行号会撞。
+
+**首页大卡（`.hero`）**
+
+- 数据来自 `GET /api/dashboard` 的 `weekLoad`：按 `setting("week_start")` 算本周一起点，`group by substr(l.start_at,1,10)`，再补零成 7 项（`{date, weekday, count, minutes, done, isToday}`）。**补零必须在接口里做**，前端只需 `Math.max(1, ...)` 取最大值为柱高。
+- 柱子高度 `Math.max(6, (count / max) * 54)`——留 6px 下限，否则没课的那天完全消失，看着像数据缺了。非今天的柱子用 `rgba(255,255,255,.22)` + 1px 内描边，深色底上 `0.13` 几乎看不见。
+- 首页原来那排 `Stat` 仍然保留在 hero 下面，hero 只负责"今天几节课 + 本周节奏 + 三个动作"。
+
+**落款（`src/lib/report.ts` 的 `signLine`）**：机构、老师都可能没填，规则是"都没填 → 空行；只有机构 → 只写机构；都有 → 全角空格连接"。别再用 `${org}　${teacher || "老师"}`，会写出"XX 中心　老师"这种别扭落款。`tests/report.test.ts` 里有三条测试盯着它（注意该文件里 `base.orgName` 是「星星课后服务中心」、`toneInput()` 里是「天凉课后服务」，断言别写串）。

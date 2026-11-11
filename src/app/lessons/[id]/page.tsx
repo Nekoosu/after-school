@@ -82,6 +82,8 @@ export default function LessonPage() {
   const lid = Number(id);
   const router = useRouter();
   const toast = useToast();
+  // 正在填的这门课的草稿：关窗口/断电都不丢，下次进来接着填
+  const draftKey = `as-draft-lesson-${lid}`;
 
   const [data, setData] = useState<LessonDetail | null>(null);
   const [plan, setPlan] = useState<PlanLite | null>(null);
@@ -106,6 +108,33 @@ export default function LessonPage() {
             topic: "",
             level: 3,
           };
+        }
+        // 上次没记完的内容（手滑关了窗口、电脑重启）从本机草稿里捡回来
+        try {
+          const raw = d.lesson.status === "done" ? null : localStorage.getItem(draftKey);
+          if (raw) {
+            const saved = JSON.parse(raw) as { ids?: string; rows?: Record<string, RowState> };
+            const ids = d.students.map((s) => s.student_id).join(",");
+            if (saved?.ids === ids && saved.rows) {
+              let used = false;
+              for (const s of d.students) {
+                const s2 = saved.rows[String(s.student_id)];
+                if (!s2) continue;
+                const base = init[s.student_id];
+                if (!base) continue;
+                init[s.student_id] = {
+                  status: s2.status ?? base.status,
+                  note: s2.note ?? base.note,
+                  topic: s2.topic ?? base.topic,
+                  level: s2.level ?? base.level,
+                };
+                if ((s2.note ?? "").trim()) used = true;
+              }
+              if (used) toast.info("已恢复上次没记完的内容");
+            }
+          }
+        } catch {
+          // 草稿坏了就当没有
         }
         setRows(init);
         if (d.lesson.plan_id) {
@@ -135,6 +164,18 @@ export default function LessonPage() {
       .then((r) => setTopics(r.map((x) => x.topic)))
       .catch(() => {});
   }, []);
+
+  // 每敲一个字都存一份本机草稿（体积很小，不会卡）；记完就清掉
+  useEffect(() => {
+    if (!data || data.lesson.status === "done") return;
+    if (Object.keys(rows).length === 0) return;
+    try {
+      const ids = data.students.map((s) => s.student_id).join(",");
+      localStorage.setItem(draftKey, JSON.stringify({ ids, rows, at: new Date().toISOString() }));
+    } catch {
+      // 隐私模式或空间满了：丢草稿可以接受，正事不耽误
+    }
+  }, [rows, data, draftKey]);
 
   const done = data?.lesson.status === "done";
 
@@ -172,6 +213,11 @@ export default function LessonPage() {
       }));
       const res = await post<{ billedTotal: number; noteCount: number }>(`/api/lessons/${lid}/finish`, { items });
       toast.ok(`已记完：扣课时 ${durationText(res.billedTotal)}，写入学情 ${res.noteCount} 条`);
+      try {
+        localStorage.removeItem(draftKey);
+      } catch {
+        // 清不掉也无所谓，下次进来这门课已经 done，不会恢复
+      }
       // 记完直接接着问「今天每个孩子怎么样」——上课内容已经在备课里了
       router.push(`/lessons/${lid}/wrap`);
     } catch (e) {

@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -27,8 +29,7 @@ namespace AfterSchool
         static int port;
         static volatile bool ready;
         static volatile string lastError = "";
-        static Label statusLabel;
-        static Form splash;
+        static SplashForm splash;
         static IntPtr jobHandle = IntPtr.Zero;
 
         // 让 node 子进程跟启动器同生共死：即使启动器被任务管理器强杀，
@@ -93,6 +94,26 @@ namespace AfterSchool
             appDir = Join(exeDir, "app");
             dataDir = Join(appDir, "data");
             profileDir = Join(dataDir, "window-profile");
+
+            // 只为了截图/调样式：AfterSchool.exe --splash 单独显示启动画面 4 秒，不启动服务
+            if (args.Length > 0 && args[0] == "--splash")
+            {
+                Icon tmp = null;
+                try
+                {
+                    string ip = Join(appDir, "public\\app.ico");
+                    if (!File.Exists(ip)) ip = Join(exeDir, "public\\app.ico");
+                    if (File.Exists(ip)) tmp = new Icon(ip);
+                }
+                catch { }
+                SplashForm s = new SplashForm(tmp);
+                System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
+                t.Interval = 4000;
+                t.Tick += delegate { t.Stop(); s.FadeOutAndClose(); };
+                t.Start();
+                Application.Run(s);
+                return;
+            }
 
             try
             {
@@ -317,7 +338,7 @@ namespace AfterSchool
             {
                 if (splash != null && splash.Visible)
                 {
-                    splash.BeginInvoke(new MethodInvoker(delegate { splash.Close(); }));
+                    splash.FadeOutAndClose();
                 }
             }
             catch { }
@@ -404,56 +425,25 @@ namespace AfterSchool
         {
             try
             {
-                if (statusLabel == null) return;
-                statusLabel.Text = ready
-                    ? "准备好了。"
-                    : "正在启动…\r\n" + (lastError.Length > 0 ? lastError : "第一次打开要建数据库，稍等十几秒。");
+                if (splash == null) return;
+                if (ready) splash.SetStatus("准备好了，正在打开窗口");
+                else splash.SetStatus(lastError.Length > 0 ? lastError : "");
             }
             catch { }
         }
 
-        /// <summary>启动画面：只是一块「正在启动」，服务好了自动关掉换成应用窗口。</summary>
+        /// <summary>启动画面：单独一块卡面，服务好了自动淡出换成应用窗口。</summary>
         static void ShowSplash()
         {
-            Form f = new Form();
-            f.Text = "课后服务管理";
-            f.Width = 420;
-            f.Height = 172;
-            f.StartPosition = FormStartPosition.CenterScreen;
-            f.FormBorderStyle = FormBorderStyle.FixedSingle;
-            f.MaximizeBox = false;
-            f.MinimizeBox = false;
-            f.BackColor = Color.White;
-            f.ShowInTaskbar = true;
-
+            Icon ico = null;
+            string icoPath = Join(appDir, "public\\app.ico");
             try
             {
-                string ico = Join(appDir, "public\\app.ico");
-                if (File.Exists(ico)) f.Icon = new Icon(ico);
+                if (File.Exists(icoPath)) ico = new Icon(icoPath);
             }
             catch { }
 
-            Label title = new Label();
-            title.Text = "课后服务管理";
-            title.Font = new Font("Microsoft YaHei UI", 13F, FontStyle.Bold);
-            title.AutoSize = true;
-            title.Location = new Point(22, 16);
-            f.Controls.Add(title);
-
-            statusLabel = new Label();
-            statusLabel.Text = "正在启动…";
-            statusLabel.Font = new Font("Microsoft YaHei UI", 9F);
-            statusLabel.Location = new Point(24, 54);
-            statusLabel.Size = new Size(360, 52);
-            f.Controls.Add(statusLabel);
-
-            Button cancel = new Button();
-            cancel.Text = "取消";
-            cancel.Location = new Point(300, 116);
-            cancel.Size = new Size(84, 28);
-            cancel.Click += delegate { f.Close(); };
-            f.Controls.Add(cancel);
-
+            SplashForm f = new SplashForm(ico);
             f.FormClosing += delegate { if (!ready) KillChild(); };
             splash = f;
             Application.Run(f);
@@ -473,6 +463,252 @@ namespace AfterSchool
                 }
             }
             catch { }
+        }
+    }
+
+    /// <summary>
+    /// 启动画面：一块手绘的卡面。图标外面转一圈弧、下面来回扫的进度条、状态文字随秒数呼吸。
+    /// 服务就绪后主线程调 FadeOutAndClose()，淡出再换成应用窗口。
+    /// 注意：csc.exe 是 .NET Framework 4 的 C# 5 编译器，不能用 $"..."、?.、nameof、表达式体成员。
+    /// </summary>
+    class SplashForm : Form
+    {
+        readonly Icon appIcon;
+        readonly System.Windows.Forms.Timer tick;
+        readonly DateTime started = DateTime.Now;
+        double phase;
+        double opacity = 0;
+        bool closing;
+        string status = "";
+
+        static readonly Color BgTop = Color.FromArgb(26, 36, 58);
+        static readonly Color BgBottom = Color.FromArgb(11, 16, 30);
+        static readonly Color BrandA = Color.FromArgb(37, 99, 235);
+        static readonly Color BrandB = Color.FromArgb(124, 92, 255);
+        static readonly Color TextMain = Color.FromArgb(240, 245, 253);
+        static readonly Color TextDim = Color.FromArgb(150, 163, 187);
+        static readonly Color Track = Color.FromArgb(38, 50, 75);
+
+        public SplashForm(Icon icon)
+        {
+            appIcon = icon;
+            Text = "课后服务管理";
+            FormBorderStyle = FormBorderStyle.None;
+            StartPosition = FormStartPosition.CenterScreen;
+            ClientSize = new Size(520, 248);
+            BackColor = BgBottom;
+            ShowInTaskbar = true;
+            KeyPreview = true;
+            Opacity = 0;
+            if (icon != null) Icon = icon;
+
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true);
+
+            Label cancel = new Label();
+            cancel.Text = "取消";
+            cancel.ForeColor = TextDim;
+            cancel.Font = new Font("Microsoft YaHei UI", 9F);
+            cancel.BackColor = Color.Transparent;
+            cancel.Cursor = Cursors.Hand;
+            cancel.AutoSize = true;
+            cancel.Location = new Point(470, 200);
+            cancel.Click += delegate { Close(); };
+            Controls.Add(cancel);
+
+            tick = new System.Windows.Forms.Timer();
+            tick.Interval = 33;
+            tick.Tick += delegate
+            {
+                phase += 0.045;
+                if (phase > 100000) phase = 0;
+                if (closing)
+                {
+                    opacity -= 0.16;
+                    if (opacity <= 0)
+                    {
+                        tick.Stop();
+                        Close();
+                        return;
+                    }
+                }
+                else if (opacity < 1)
+                {
+                    opacity += 0.14;
+                    if (opacity > 1) opacity = 1;
+                }
+                try { Opacity = opacity; } catch { }
+                Invalidate();
+            };
+            tick.Start();
+
+            KeyDown += delegate(object s, KeyEventArgs e)
+            {
+                if (e.KeyCode == Keys.Escape) Close();
+            };
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            try
+            {
+                Region r = new Region(Path(new Rectangle(0, 0, Width, Height), 18));
+                Region = r;
+            }
+            catch { }
+        }
+
+        /// <summary>背景线程也能调：状态文字（空字符串 = 用默认的「正在启动服务」）。</summary>
+        public void SetStatus(string s)
+        {
+            if (IsHandleCreated && InvokeRequired)
+            {
+                try { BeginInvoke(new MethodInvoker(delegate { SetStatus(s); })); }
+                catch { }
+                return;
+            }
+            status = s == null ? "" : s;
+            Invalidate();
+        }
+
+        public void FadeOutAndClose()
+        {
+            if (IsHandleCreated && InvokeRequired)
+            {
+                try { BeginInvoke(new MethodInvoker(FadeOutAndClose)); }
+                catch { }
+                return;
+            }
+            closing = true;
+        }
+
+        static GraphicsPath Path(Rectangle r, int rad)
+        {
+            GraphicsPath p = new GraphicsPath();
+            int d = rad * 2;
+            p.AddArc(r.X, r.Y, d, d, 180, 90);
+            p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            p.CloseFigure();
+            return p;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+
+            Rectangle full = new Rectangle(0, 0, Width, Height);
+            using (LinearGradientBrush bg = new LinearGradientBrush(full, BgTop, BgBottom, 115f))
+            {
+                g.FillRectangle(bg, full);
+            }
+
+            // 图标那块的光晕
+            for (int i = 4; i >= 1; i--)
+            {
+                int pad = 18 + i * 15;
+                using (SolidBrush glow = new SolidBrush(Color.FromArgb(9, BrandA)))
+                {
+                    g.FillEllipse(glow, 76 - pad, 76 - pad, pad * 2, pad * 2);
+                }
+            }
+
+            // 图标：圆角方块渐变底 + 白色图标
+            Rectangle tile = new Rectangle(44, 44, 64, 64);
+
+            // 绕着图标转的那两圈弧（先画，压在图标的下面）
+            Rectangle ring = new Rectangle(34, 34, 84, 84);
+            float start = (float)((phase * 70) % 360);
+            using (Pen pen = new Pen(Color.FromArgb(150, 160, 200, 255), 2.2f))
+            {
+                pen.StartCap = LineCap.Round;
+                pen.EndCap = LineCap.Round;
+                g.DrawArc(pen, ring, start, 100);
+            }
+            using (Pen pen2 = new Pen(Color.FromArgb(70, 120, 150, 255), 1.4f))
+            {
+                g.DrawArc(pen2, ring, start + 180, 46);
+            }
+
+            if (appIcon != null)
+            {
+                // 有正经图标就整块铺满，并裁成圆角，看着像一个完整的应用图标
+                using (GraphicsPath clip = Path(tile, 16))
+                {
+                    GraphicsState st = g.Save();
+                    g.SetClip(clip);
+                    g.DrawIcon(appIcon, tile);
+                    g.Restore(st);
+                }
+            }
+            else
+            {
+                using (GraphicsPath tp = Path(tile, 16))
+                {
+                    using (LinearGradientBrush tb = new LinearGradientBrush(tile, BrandA, BrandB, 125f))
+                    {
+                        g.FillPath(tb, tp);
+                    }
+                }
+                using (Font f = new Font("Microsoft YaHei UI", 22F, FontStyle.Bold))
+                {
+                    using (StringFormat sf = new StringFormat())
+                    {
+                        sf.Alignment = StringAlignment.Center;
+                        sf.LineAlignment = StringAlignment.Center;
+                        g.DrawString("课", f, Brushes.White, tile, sf);
+                    }
+                }
+            }
+
+            // 标题
+            using (Font fTitle = new Font("Microsoft YaHei UI", 17F, FontStyle.Bold))
+            {
+                g.DrawString("课后服务管理", fTitle, new SolidBrush(TextMain), 134, 46);
+            }
+            using (Font fSub = new Font("Microsoft YaHei UI", 8.8f))
+            {
+                g.DrawString("课表 · 课时 · 家长反馈 · 数据都在本机", fSub, new SolidBrush(TextDim), 136, 82);
+            }
+
+            // 进度条：轨道 + 来回扫的胶囊
+            Rectangle track = new Rectangle(44, 136, 432, 6);
+            using (GraphicsPath tp = Path(track, 3))
+            {
+                g.FillPath(new SolidBrush(Track), tp);
+            }
+            double u = (phase * 0.42) % 2.0;
+            double t2 = u <= 1 ? u : 2 - u;
+            double eased = 0.5 - 0.5 * Math.Cos(Math.PI * t2);
+            int barW = 128;
+            int barX = 44 + (int)(eased * (432 - barW));
+            Rectangle bar = new Rectangle(barX, 136, barW, 6);
+            using (GraphicsPath bp = Path(bar, 3))
+            {
+                using (LinearGradientBrush bb = new LinearGradientBrush(new Rectangle(barX, 136, barW, 6), BrandA, BrandB, 0f))
+                {
+                    g.FillPath(bb, bp);
+                }
+            }
+
+            // 状态：默认「正在启动服务」，出错时显示原因；超过 3 秒带上秒数，让人知道还活着
+            int secs = (int)(DateTime.Now - started).TotalSeconds;
+            string s = status.Length > 0 ? status : "正在启动服务";
+            if (!closing && status.Length == 0 && secs >= 3) s = s + " · " + secs.ToString() + " 秒";
+            int dots = (int)(phase * 1.6) % 4;
+            string trail = "";
+            for (int i = 0; i < dots; i++) trail += "·";
+            using (Font fStatus = new Font("Microsoft YaHei UI", 9.2f))
+            {
+                g.DrawString(status.Length > 0 ? s : s + " " + trail, fStatus, new SolidBrush(TextDim), 44, 156);
+            }
+            using (Font fTiny = new Font("Microsoft YaHei UI", 8.2f))
+            {
+                g.DrawString("第一次启动要建数据库，通常十几秒 · 数据都存在本机", fTiny, new SolidBrush(Color.FromArgb(110, 125, 150)), 44, 204);
+            }
         }
     }
 }

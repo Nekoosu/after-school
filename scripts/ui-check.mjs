@@ -492,7 +492,65 @@ async function main() {
     await sleep(1200);
     const ttTxt = await evalJS(bodyText);
     ok("课表页签里有内容（余额或空态）", ttTxt.includes("课时") || ttTxt.includes("还没有"), "");
-    console.log("\n[19] 控制台错误");
+    console.log("\n[19] 首页大卡与本周负载");
+    await goto("/", "今天");
+    ok("首页有一块问候大卡", (await evalJS(`return !!document.querySelector(".hero-title");`)) === true);
+    ok(
+      "大卡上有三个快捷动作",
+      Number(await evalJS(`return document.querySelectorAll(".hero-actions .btn").length;`)) >= 3,
+    );
+    ok(
+      "本周负载是 7 根柱子（一到周日）",
+      Number(await evalJS(`return document.querySelectorAll(".week-bars .wb").length;`)) === 7,
+    );
+    ok("今天那一根被点亮", (await evalJS(`return !!document.querySelector(".week-bars .wb.on");`)) === true);
+    ok(
+      "柱子上写着几节课",
+      String(await evalJS(`return document.querySelector(".hero-side-head b")?.innerText ?? "";`)).includes("节"),
+    );
+
+    console.log("\n[20] 记一笔写一半刷新也不丢（本机草稿）");
+    let dash = await getJson("/api/dashboard");
+    let todo = (dash.needRecord ?? [])[0] ?? null;
+    if (!todo) {
+      const cid = (await getJson("/api/courses"))[0]?.id;
+      const d = new Date(Date.now() - 26 * 3600 * 1000);
+      const pad = (n) => String(n).padStart(2, "0");
+      const startAt = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} 10:00`;
+      await fetchJson("/api/lessons", {
+        method: "POST",
+        body: JSON.stringify({ courseId: cid, startAt, minutes: 90, studentIds: [stu.id] }),
+      });
+      dash = await getJson("/api/dashboard");
+      todo = (dash.needRecord ?? [])[0] ?? null;
+    }
+    if (!todo) {
+      ok("有一节待记录的课可以试草稿", false, "建了课也没出现在待记录里");
+    } else {
+      await goto(`/lessons/${todo.id}`, "");
+      const draftText = `草稿恢复测试 ${Date.now() % 10000}`;
+      await evalJS(`return (() => {
+        const el = document.querySelector(".input.grow");
+        if (!el) throw new Error("没有一句话输入框");
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, ${JSON.stringify(draftText)});
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
+      })();`);
+      await sleep(700);
+      ok(
+        "草稿写进了本机存储",
+        String(await evalJS(`return localStorage.getItem("as-draft-lesson-${todo.id}") ?? "";`)).includes(draftText),
+      );
+      await goto(`/lessons/${todo.id}`, "");
+      await sleep(1200);
+      ok(
+        "刷新后自动恢复",
+        String(await evalJS(`return document.querySelector(".input.grow")?.value ?? "";`)).includes(draftText),
+      );
+      await evalJS(`return (() => { localStorage.removeItem("as-draft-lesson-${todo.id}"); return true; })();`);
+    }
+
+    console.log("\n[21] 控制台错误");
     const real = errors.filter((e) => e && !/favicon|Failed to load resource: the server responded with a status of 404/i.test(e));
     ok("页面没有脚本报错", real.length === 0, real.slice(0, 3).join(" | "));
   } finally {

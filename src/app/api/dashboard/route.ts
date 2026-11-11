@@ -133,8 +133,40 @@ export async function GET() {
        limit 6`,
     );
 
+    // 本周负载：一到周日每天几节课、多少分钟、几节已经上完（首页顶部那条小柱子）
+    const weekStart = Number(setting("week_start", "1"));
+    const dow = parseLocal(today).getDay();
+    const offset = (dow - (Number.isFinite(weekStart) ? weekStart : 1) + 7) % 7;
+    const firstDay = addDays(parseLocal(today), -offset);
+    const lastDay = addDays(firstDay, 7);
+    const loadRows = all<{ d: string; c: number; m: number; done: number }>(
+      `select substr(l.start_at,1,10) as d,
+              count(*) as c,
+              coalesce(sum(l.minutes), 0) as m,
+              sum(case when l.status = 'done' then 1 else 0 end) as done
+       from lesson l
+       where l.start_at >= ? and l.start_at < ? and l.status <> 'cancelled'
+       group by d`,
+      [toDateStr(firstDay), toDateStr(lastDay)],
+    );
+    const loadMap = new Map(loadRows.map((r) => [r.d, r]));
+    const weekLoad = [];
+    for (let i = 0; i < 7; i++) {
+      const ds = toDateStr(addDays(firstDay, i));
+      const row = loadMap.get(ds);
+      weekLoad.push({
+        date: ds,
+        weekday: new Date(ds + "T00:00:00").getDay(),
+        count: row?.c ?? 0,
+        minutes: row?.m ?? 0,
+        done: row?.done ?? 0,
+        isToday: ds === today,
+      });
+    }
+
     return ok({
       date: today,
+      weekLoad,
       todayLessons,
       makeupPending: makeup,
       lowBalanceStudents: lowHours,

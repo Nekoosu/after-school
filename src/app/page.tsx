@@ -77,6 +77,14 @@ interface Dashboard {
   monthUsed: number;
   needRecord: Array<{ id: number; start_at: string; course_name: string }>;
   staleStudents: StaleItem[];
+  weekLoad?: Array<{
+    date: string;
+    weekday: number;
+    count: number;
+    minutes: number;
+    done: number;
+    isToday: boolean;
+  }>;
 }
 
 function greeting(): string {
@@ -128,27 +136,63 @@ export default function TodayPage() {
   const notes = data.recentNotes ?? [];
   const stale = data.staleStudents ?? [];
 
+  const wl = data.weekLoad ?? [];
+  const wlMax = Math.max(1, ...wl.map((w) => w.count));
+  const wlCount = wl.reduce((n, w) => n + w.count, 0);
+  const wlHours = toHours(wl.reduce((n, w) => n + w.minutes, 0));
+  const firstToday = data.todayLessons[0];
+
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1 className="page-title">
+      <div className="hero">
+        <div className="hero-main">
+          <p className="hero-kicker">{dateLabel}</p>
+          <h1 className="hero-title">
             {greeting()}
             {withTeacher(teacher)}
           </h1>
-          <p className="page-sub">
-            {dateLabel}　·　今天 {data.todayLessons.length} 节课，还有 {data.upcomingLessons} 节排在未来
+          <p className="hero-sub">
+            今天 {data.todayLessons.length} 节课
+            {firstToday
+              ? `　·　第一节 ${timeOf(firstToday.start_at)}　${firstToday.course_name}`
+              : "　·　还没排课，给自己留出空当也挺好"}
+            {makeup.length > 0 ? `　·　待补课 ${makeup.length} 条` : ""}
           </p>
+          <div className="hero-actions">
+            <Link href="/calendar?new=1" className="btn btn-primary">
+              <Icon name="calendar" size={15} />
+              排一节课
+            </Link>
+            <Link href="/feedback" className="btn">
+              <Icon name="message" size={15} />
+              写反馈
+            </Link>
+            <Link href="/students" className="btn">
+              <Icon name="users" size={15} />
+              学生名册
+            </Link>
+          </div>
         </div>
-        <div className="page-head-actions">
-          <Link href="/calendar?new=1" className="btn">
-            <Icon name="calendar" size={15} />
-            排课
-          </Link>
-          <Link href="/feedback" className="btn btn-primary">
-            <Icon name="message" size={15} />
-            写反馈
-          </Link>
+        <div className="hero-side">
+          <div className="hero-side-head">
+            <span>本周负载</span>
+            <b>
+              {wlCount} 节 / {wlHours} 小时
+            </b>
+          </div>
+          <div className="week-bars">
+            {wl.map((w) => (
+              <div
+                key={w.date}
+                className={"wb" + (w.isToday ? " on" : "")}
+                title={`${w.date}　${w.count} 节　${toHours(w.minutes)} 小时`}
+              >
+                <span className="wb-n">{w.count || ""}</span>
+                <i style={{ height: Math.max(6, (w.count / wlMax) * 54) }} />
+                <em>{WEEK_CN[w.weekday]?.slice(1) ?? ""}</em>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
