@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
+import { Menu, MenuItem } from "./ui";
 import { SearchPalette } from "./SearchPalette";
 import { cn } from "@/lib/format";
 import { AUTHOR_NAME, AUTHOR_URL } from "@/lib/author";
@@ -349,6 +350,58 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
 
           <div className="topbar-actions">
+            <div className="topbar-new">
+              <Menu
+                align="right"
+                trigger={
+                  <button className="btn btn-primary btn-sm topbar-new-btn" aria-label="新建">
+                    <Icon name="plus" size={15} />
+                    <span className="topbar-new-text">新建</span>
+                  </button>
+                }
+              >
+                {(close) => (
+                  <>
+                    <MenuItem
+                      icon="calendar"
+                      onClick={() => {
+                        close();
+                        window.location.href = "/calendar?new=1";
+                      }}
+                    >
+                      排一节课
+                    </MenuItem>
+                    <MenuItem
+                      icon="book"
+                      onClick={() => {
+                        close();
+                        window.location.href = "/calendar";
+                      }}
+                    >
+                      去记一笔（今天的课）
+                    </MenuItem>
+                    <MenuItem
+                      icon="wallet"
+                      onClick={() => {
+                        close();
+                        window.location.href = "/finance?new=1";
+                      }}
+                    >
+                      收一笔钱
+                    </MenuItem>
+                    <MenuItem
+                      icon="users"
+                      onClick={() => {
+                        close();
+                        window.location.href = "/students?new=1";
+                      }}
+                    >
+                      加一个学生
+                    </MenuItem>
+                  </>
+                )}
+              </Menu>
+            </div>
             <button
               className="btn btn-icon btn-ghost"
               onClick={toggleTheme}

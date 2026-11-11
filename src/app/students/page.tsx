@@ -18,6 +18,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { api, post } from "@/lib/client";
+import { useAutoNew } from "@/lib/autoNew";
 import { avatarColor, money, relTime, toHours } from "@/lib/format";
 
 interface StudentRow {
@@ -83,6 +84,7 @@ export default function StudentsPage() {
   const [bulkErr, setBulkErr] = useState("");
   const [threshold, setThreshold] = useState(450);
   const [importOpen, setImportOpen] = useState(false);
+  useAutoNew(setOpen); // 顶栏「新建 · 加一个学生」跳 ?new=1，直接把弹层打开
   const [form, setForm] = useState({
     name: "",
     gender: "",

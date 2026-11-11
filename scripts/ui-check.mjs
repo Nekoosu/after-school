@@ -550,7 +550,34 @@ async function main() {
       await evalJS(`return (() => { localStorage.removeItem("as-draft-lesson-${todo.id}"); return true; })();`);
     }
 
-    console.log("\n[21] 控制台错误");
+    console.log("\n[21] 顶栏「新建」菜单与设置页数据体检");
+    await goto("/", "");
+    await sleep(500);
+    ok(
+      "顶栏有「新建」按钮",
+      Boolean(await evalJS(`return !!document.querySelector(".topbar-new-btn");`)),
+    );
+    await evalJS(`return (() => { document.querySelector(".topbar-new-btn").click(); return true; })();`);
+    await sleep(350);
+    const menuTexts = String(
+      await evalJS(
+        `return Array.from(document.querySelectorAll(".topbar-new .menu .menu-item")).map((e) => e.textContent.trim()).join("|");`,
+      ),
+    );
+    ok("菜单里有四个快捷动作", menuTexts.split("|").filter(Boolean).length >= 4, menuTexts);
+    ok(
+      "菜单能跳到排课与收款",
+      menuTexts.includes("排一节课") && menuTexts.includes("收一笔钱"),
+      menuTexts,
+    );
+    await goto("/settings", "");
+    await sleep(1500);
+    const diagRows = Number(
+      await evalJS(`return document.querySelectorAll(".diag-list .diag-row").length;`),
+    );
+    ok("设置页有数据体检卡", diagRows === 5, `diag-row = ${diagRows}`);
+
+    console.log("\n[22] 控制台错误");
     const real = errors.filter((e) => e && !/favicon|Failed to load resource: the server responded with a status of 404/i.test(e));
     ok("页面没有脚本报错", real.length === 0, real.slice(0, 3).join(" | "));
   } finally {

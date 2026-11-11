@@ -5,8 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/components/icons";
 import { MakeupModal, type MakeupTarget } from "@/components/MakeupModal";
 import { Sparkline } from "@/components/Sparkline";
-import { Avatar, Badge, Card, Empty, PageLoading, Section, Stat } from "@/components/ui";
-import { api } from "@/lib/client";
+import { Avatar, Badge, Card, Empty, PageLoading, Section, Stat, useToast } from "@/components/ui";
+import { api, copyText } from "@/lib/client";
 import {
   LESSON_STATUS_CN,
   NOTE_KIND_CN,
@@ -106,6 +106,7 @@ function withTeacher(t: string): string {
 const WEEK_CN = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
 export default function TodayPage() {
+  const toast = useToast();
   const [data, setData] = useState<Dashboard | null>(null);
   const [teacher, setTeacher] = useState("");
   const [err, setErr] = useState("");
@@ -141,6 +142,20 @@ export default function TodayPage() {
   const wlCount = wl.reduce((n, w) => n + w.count, 0);
   const wlHours = toHours(wl.reduce((n, w) => n + w.minutes, 0));
   const firstToday = data.todayLessons[0];
+
+  async function copyNotice() {
+    const lines = low.map((s) => {
+      const h = toHours(s.balance_minutes);
+      return s.balance_minutes <= 0 ? `${s.name}：课时已用完` : `${s.name}：还剩 ${h} 小时`;
+    });
+    const text = `家长您好，这里同步一下最近剩下的课时：\n${lines.join("\n")}\n不够的话我这边可以先记着，方便的时候续一下就好，不影响孩子上课。`;
+    try {
+      await copyText(text);
+      toast.ok("催费话术已复制，粘到微信里就能发");
+    } catch {
+      toast.bad("复制失败，可以手动选文字");
+    }
+  }
 
   return (
     <>
@@ -375,7 +390,19 @@ export default function TodayPage() {
           <Section
             title="课时不足"
             count={low.length}
-            actions={<span className="section-actions muted">低于 {toHours(data.lowBalanceThreshold)} 小时</span>}
+            actions={
+              <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                <span className="section-actions muted">
+                  低于 {toHours(data.lowBalanceThreshold)} 小时
+                </span>
+                {low.length > 0 ? (
+                  <button className="btn btn-sm" onClick={copyNotice} title="按剩余课时生成一段催费文案">
+                    <Icon name="copy" size={14} />
+                    复制催费话术
+                  </button>
+                ) : null}
+              </div>
+            }
           >
             <Card>
               {low.length === 0 ? (

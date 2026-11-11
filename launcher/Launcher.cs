@@ -32,6 +32,37 @@ namespace AfterSchool
         static SplashForm splash;
         static IntPtr jobHandle = IntPtr.Zero;
 
+        // 记住上次窗口多大：下次打开还是这个尺寸（跟真软件一样）
+        static volatile int winW = 1320;
+        static volatile int winH = 900;
+        static volatile bool watching = false;
+
+        [DllImport("shcore.dll")]
+        static extern int SetProcessDpiAwareness(int value);
+
+        [DllImport("user32.dll")]
+        static extern bool EnumWindows(EnumProc cb, IntPtr lp);
+
+        [DllImport("user32.dll")]
+        static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+
+        [DllImport("user32.dll")]
+        static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
+
+        delegate bool EnumProc(IntPtr hWnd, IntPtr lp);
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct RECT
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
+
         // 让 node 子进程跟启动器同生共死：即使启动器被任务管理器强杀，
         // 关掉 job 句柄时系统也会把子进程一起收掉，不会留下占着端口的孤儿进程。
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
@@ -95,6 +126,9 @@ namespace AfterSchool
             dataDir = Join(appDir, "data");
             profileDir = Join(dataDir, "window-profile");
 
+            // 高分屏（125%/150%/200% 缩放）下别糊：按显示器独立缩放
+            try { SetProcessDpiAwareness(2); } catch { }
+
             // 只为了截图/调样式：AfterSchool.exe --splash 单独显示启动画面 4 秒，不启动服务
             if (args.Length > 0 && args[0] == "--splash")
             {
@@ -124,6 +158,7 @@ namespace AfterSchool
                     return;
                 }
                 Directory.CreateDirectory(dataDir);
+                LoadWindowSize();
 
                 // 已经有一份在跑：直接开窗口，不再起第二个
                 int running = ReadPortFile();
@@ -132,6 +167,7 @@ namespace AfterSchool
                     port = running;
                     OpenAppWindow();
                     if (appWindow != null) appWindow.WaitForExit();
+                    SaveWindowSize();
                     return;
                 }
 
@@ -160,6 +196,7 @@ namespace AfterSchool
                 if (appWindow != null)
                 {
                     appWindow.WaitForExit();
+                    SaveWindowSize();
                 }
                 ShutdownServer();
                 KillChild();
@@ -169,6 +206,76 @@ namespace AfterSchool
                 MessageBox.Show("启动失败：" + ex.Message, "课后服务管理", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 KillChild();
             }
+        }
+
+        static string WindowFile()
+        {
+            return Join(dataDir, "window.txt");
+        }
+
+        /// <summary>上次窗口多大，这次还这么大（存成 1320x900 这种）。</summary>
+        static void LoadWindowSize()
+        {
+            try
+            {
+                if (!File.Exists(WindowFile())) return;
+                string[] parts = File.ReadAllText(WindowFile()).Trim().Split('x');
+                if (parts.Length != 2) return;
+                int w, h;
+                if (!int.TryParse(parts[0], out w) || !int.TryParse(parts[1], out h)) return;
+                if (w >= 800 && w <= 4000 && h >= 600 && h <= 3000)
+                {
+                    winW = w;
+                    winH = h;
+                }
+            }
+            catch { }
+        }
+
+        static void SaveWindowSize()
+        {
+            try { File.WriteAllText(WindowFile(), winW.ToString() + "x" + winH.ToString()); }
+            catch { }
+        }
+
+        /// <summary>窗口开着的时候隔一会儿量一次尺寸，关掉时把最后的尺寸留下来。</summary>
+        static void WatchWindowSize()
+        {
+            if (watching) return;
+            watching = true;
+            Thread t = new Thread(new ThreadStart(delegate
+            {
+                while (appWindow != null && !appWindow.HasExited)
+                {
+                    try
+                    {
+                        uint target = (uint)appWindow.Id;
+                        EnumProc cb = delegate(IntPtr h, IntPtr lp)
+                        {
+                            uint pid;
+                            GetWindowThreadProcessId(h, out pid);
+                            if (pid != target || !IsWindowVisible(h)) return true;
+                            RECT r;
+                            if (GetWindowRect(h, out r))
+                            {
+                                int w = r.Right - r.Left;
+                                int ht = r.Bottom - r.Top;
+                                if (w >= 800 && w <= 4000 && ht >= 600 && ht <= 3000)
+                                {
+                                    winW = w;
+                                    winH = ht;
+                                }
+                            }
+                            return true;
+                        };
+                        EnumWindows(cb, IntPtr.Zero);
+                    }
+                    catch { }
+                    Thread.Sleep(1200);
+                }
+            }));
+            t.IsBackground = true;
+            t.Start();
         }
 
         static string Url()
@@ -387,9 +494,10 @@ namespace AfterSchool
                 psi.Arguments = "--app=" + Url() +
                     " --user-data-dir=\"" + profileDir + "\"" +
                     " --no-first-run --no-default-browser-check --disable-features=msEdgeSidebarV2" +
-                    " --window-size=1320,900";
+                    " --window-size=" + winW.ToString() + "," + winH.ToString();
                 psi.UseShellExecute = false;
                 appWindow = Process.Start(psi);
+                WatchWindowSize();
             }
             catch
             {

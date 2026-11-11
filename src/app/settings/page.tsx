@@ -31,6 +31,21 @@ interface BackupFile {
   kind: "auto" | "manual";
 }
 
+interface DiagIssue {
+  key: string;
+  label: string;
+  hint: string;
+  href: string;
+  count: number;
+  samples: string[];
+}
+
+interface DiagResult {
+  checkedAt: string;
+  total: number;
+  issues: DiagIssue[];
+}
+
 function sizeText(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
@@ -50,6 +65,7 @@ export default function SettingsPage() {
   const [dirty, setDirty] = useState(false);
   const [bk, setBk] = useState<{ dir: string; files: BackupFile[]; total: number } | null>(null);
   const [bkBusy, setBkBusy] = useState(false);
+  const [diag, setDiag] = useState<DiagResult | null>(null);
   const [restoreFile, setRestoreFile] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [delFile, setDelFile] = useState<string | null>(null);
@@ -96,6 +112,9 @@ export default function SettingsPage() {
       .then(setS)
       .catch((e: Error) => toast.bad(e.message));
     loadBackups();
+    api<DiagResult>("/api/diagnostics")
+      .then(setDiag)
+      .catch(() => setDiag(null));
   }, [toast, loadBackups]);
 
   async function backupNow() {
@@ -478,6 +497,48 @@ export default function SettingsPage() {
           </Card>
 
           <div className="col" style={{ gap: 16 }}>
+            <Card>
+              <CardHead
+                title="数据体检"
+                icon="check"
+                sub={
+                  diag
+                    ? diag.total === 0
+                      ? "全都对得上，没有要修的"
+                      : `发现 ${diag.total} 处要看一眼`
+                    : "正在检查…"
+                }
+              />
+              <div className="card-body">
+                {!diag ? (
+                  <p className="muted fs-sm" style={{ margin: 0 }}>
+                    检查中…
+                  </p>
+                ) : (
+                  <div className="diag-list">
+                    {diag.issues.map((it) => (
+                      <a
+                        key={it.key}
+                        className={`diag-row${it.count > 0 ? " on" : ""}`}
+                        href={it.href}
+                      >
+                        <span className={`diag-dot${it.count > 0 ? " bad" : ""}`} />
+                        <span className="diag-main">
+                          <b>{it.label}</b>
+                          <em>
+                            {it.count > 0
+                              ? it.samples.join("、") + (it.count > it.samples.length ? " 等" : "")
+                              : it.hint}
+                          </em>
+                        </span>
+                        <span className="diag-n">{it.count > 0 ? it.count : "好"}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Card>
+
             <Card>
               <CardHead title="带走与带回" icon="download" sub="导出去存着，换电脑时再导回来" />
               <div className="card-body">
