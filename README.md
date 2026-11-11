@@ -49,19 +49,12 @@
 **下载**：[最新版本](https://github.com/Nekoosu/after-school/releases/latest)
 
 - Windows：拿 `after-school-<版本号>.zip`（例如 `after-school-1.5.0.zip`）
-- macOS（M1/M2/M3/M4）：拿 `after-school-<版本号>-macos-arm64.dmg`；只有 Intel Mac 才拿 `-macos-x64.dmg`
 
 **Windows**
 
 1. 解压到任意目录（比如 `D:\课后服务`），里面是 `AfterSchool.exe`、`app\`、`使用说明.txt` 三样，缺一不可、要放在一起。
 2. 双击 `AfterSchool.exe`，第一次启动 3~8 秒，浏览器会自动打开 `http://127.0.0.1:3210`。
 3. 数据在 `app\data\app.db`，备份在 `app\backups\`，整个目录拷走就是完整迁移。
-
-**macOS**
-
-1. 打开 `.dmg`，把里面的 `课后服务管理.app` 拖到「应用程序」，把 `停止课后服务.command`、`使用说明.txt` 留在同一个文件夹或桌面（退出要用它）。
-2. 第一次双击 .app 大概率会被 Gatekeeper 拦住（没有苹果开发者签名），在 .app 上**右键 → 打开 → 再点打开**一次就行；嫌麻烦可以在终端跑 `xattr -dr com.apple.quarantine /Applications/课后服务管理.app`。
-3. 之后双击 .app 就是启动（浏览器自动打开），双击 `停止课后服务.command` 才是退出。数据在 `课后服务管理.app/Contents/Resources/app/data/`。
 
 只监听 `127.0.0.1`，同一局域网的其它电脑打不开——这是有意的。
 
@@ -84,27 +77,18 @@ pnpm test         # 40 个单元测试
 powershell -ExecutionPolicy Bypass -File scripts\package.ps1
 ```
 
-```bash
-# macOS：在任意 Mac 上跑一次，产出 build/mac/课后服务管理.app
-#       与 release/mac/after-school-<版本>-macos-<arm64|x64>.tar.gz（有 hdiutil 时还有 .dmg）
-bash scripts/package-mac.sh
-```
-
-macOS 的包必须在那台 Mac 上打——better-sqlite3 是原生模块，要现场拿到 darwin 版；
-`.app` 里的可执行权限位也只有 mac 的 tar 能保留，Windows 压出来的包双击没反应。
-
 ## 发布（版本号与压缩包命名）
 
 版本号只改一处：`src/lib/version.ts` 的 `APP_VERSION`。打包后按 `项目名-版本号.zip` 命名，
-**本地 `release\` 分两个子文件夹：`windows\` 放 Windows 的、`mac\` 放 macOS 的**，例如：
+**本地压缩包统一放 `release\windows\`**，例如：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\package.ps1
 Compress-Archive -Path dist\* -DestinationPath release\windows\after-school-1.5.0.zip
 ```
 
-然后传到 GitHub Releases，tag 用 `v1.5.0`、文件名按 `项目名-版本号[平台].压缩包`：
-Windows 是 `after-school-1.5.0.zip`，macOS 是 `after-school-1.5.0-macos-arm64.dmg`（Intel 机器 `-macos-x64`）。
+然后传到 GitHub Releases，tag 用 `v1.5.0`、文件名按 `项目名-版本号.zip`：
+Windows 是 `after-school-1.5.0.zip`。
 以后每个版本都按这套命名，下载链接永远指向 [releases/latest](https://github.com/Nekoosu/after-school/releases/latest)。
 
 ## 技术栈

@@ -58,7 +58,7 @@ export const MANUAL: ManualSection[] = [
   {
     id: "install",
     title: "安装与启动",
-    intro: "不用装 Node、不用装数据库，拷一个文件夹过去双击就能用。Windows 和 Mac 都有对应的包。",
+    intro: "不用装 Node、不用装数据库，拷一个文件夹过去双击就能用（Windows）。",
     blocks: [
       { kind: "h3", text: "第一次打开" },
       {
@@ -68,16 +68,6 @@ export const MANUAL: ManualSection[] = [
           "双击 `AfterSchool.exe`。会弹出一个小窗口，显示「正在启动…」。",
           "第一次启动大约 3~8 秒（要在本机起一个小服务），看到「已经启动」后浏览器会自动打开界面。",
           "以后每次都是双击同一个 `AfterSchool.exe`。窗口里还有「打开界面」按钮，浏览器关了也能再叫回来。",
-        ],
-      },
-      { kind: "h3", text: "在 Mac 上用" },
-      {
-        kind: "steps",
-        items: [
-          "Mac 版包名是 `after-school-<版本号>-macos-arm64.tar.gz`（M1/M2/M3/M4），Intel 机器拿 `-macos-x64`。",
-          "解压后双击 `课后服务管理.app`。第一次会被 macOS 拦一下（没有苹果签名）：**右键 → 打开 → 再点打开**，之后就不会再问了。",
-          "启动后浏览器自动打开界面；**退出**要双击包里的 `停止课后服务.command`，只关浏览器页面不会停服务。",
-          "数据在 `课后服务管理.app/Contents/Resources/app/data/` 里，备份/恢复的用法和 Windows 完全一样。",
         ],
       },
       { kind: "h3", text: "地址和端口" },
