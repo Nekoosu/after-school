@@ -29,11 +29,17 @@ function create(): Database.Database {
   // 结构性小增量（新库建表已含，旧库靠这里补）
   ensureColumn(db, "lesson", "plan_id", "INTEGER REFERENCES teach_plan(id)");
   ensureColumn(db, "student", "tags", "TEXT");
+  ensureColumn(db, "course", "teacher_id", "INTEGER REFERENCES teacher(id)");
+  ensureColumn(db, "lesson", "teacher_id", "INTEGER REFERENCES teacher(id)");
+  ensureColumn(db, "lesson", "price_per_hour", "REAL");
+  ensureColumn(db, "hours_ledger", "unit_price", "REAL");
+  ensureColumn(db, "hours_ledger", "amount", "REAL");
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_note_student_time  ON note(student_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_lesson_start       ON lesson(start_at);
     CREATE INDEX IF NOT EXISTS idx_lesson_status      ON lesson(status, start_at);
+    CREATE INDEX IF NOT EXISTS idx_lesson_teacher     ON lesson(teacher_id, start_at);
     CREATE INDEX IF NOT EXISTS idx_ledger_student     ON hours_ledger(student_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_payment_paid       ON payment(paid_at);
     CREATE INDEX IF NOT EXISTS idx_att_student        ON attendance(student_id, status);

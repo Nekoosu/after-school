@@ -456,7 +456,43 @@ async function main() {
     ok("AI 卡里有「自动获取」按钮", (await evalJS(`return !!([...document.querySelectorAll("button")].find((b) => b.textContent.includes("自动获取")));`)) === true);
     ok("模型名输入框挂了 datalist", (await evalJS(`return !!document.querySelector('input[list="ai-model-options"]');`)) === true);
 
-    console.log("\n[18] 控制台错误");
+    console.log("\n[18] 老师页：登记一位老师，课表能按老师筛");
+    await goto("/teachers", "老师");
+    ok("侧栏「老师」入口高亮", (await evalJS(`return !!document.querySelector('.sidebar .nav-item.active[href="/teachers"]');`)) === true);
+    ok("页头有「添加老师」按钮", (await evalJS(`return !!([...document.querySelectorAll("button")].find((b) => b.textContent.includes("添加老师")));`)) === true);
+    await evalJS(clickText("添加老师"));
+    ok("点开就是登记表", (await waitFor("document.querySelector('.modal')", 8000)) === true);
+    await evalJS(typeIn(".modal input.input", "测试老师"));
+    const subj = `return (() => {
+      const el = [...document.querySelectorAll('.modal input.input')][2];
+      if (!el) throw new Error("没有科目输入框");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, "数学");
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    })();`;
+    await evalJS(subj);
+    await evalJS(clickText("保存"));
+    await sleep(1500);
+    const tlist = await getJson("/api/teachers");
+    ok("老师存进去了", tlist.some((x) => x.name === "测试老师"), JSON.stringify(tlist.map((x) => x.name)));
+    ok("卡片上有本周课量", (await evalJS(bodyText)).includes("本周"), "");
+    await goto("/calendar", "课表");
+    ok("课表页有老师筛选", (await evalJS(`return document.querySelectorAll(".chip-list .chip").length >= 1;`)) === true);
+    await evalJS(`return (() => {
+      const c = [...document.querySelectorAll(".chip-list .chip")].find((x) => x.textContent.includes("测试老师"));
+      if (!c) throw new Error("筛选条里没有这位老师");
+      c.click();
+      return true;
+    })();`);
+    await sleep(600);
+    ok("点名字后变成选中态", (await evalJS(`return !!document.querySelector(".chip-list .chip.on");`)) === true);
+    await goto(`/students/${stu.id}`, "小夏");
+    ok("学生详情多了「课表」页签", (await evalJS(`return !!([...document.querySelectorAll(".tab")].find((x) => x.textContent.includes("课表")));`)) === true);
+    await evalJS(clickText("课表", ".tab"));
+    await sleep(1200);
+    const ttTxt = await evalJS(bodyText);
+    ok("课表页签里有内容（余额或空态）", ttTxt.includes("课时") || ttTxt.includes("还没有"), "");
+    console.log("\n[19] 控制台错误");
     const real = errors.filter((e) => e && !/favicon|Failed to load resource: the server responded with a status of 404/i.test(e));
     ok("页面没有脚本报错", real.length === 0, real.slice(0, 3).join(" | "));
   } finally {

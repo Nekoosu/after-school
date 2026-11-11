@@ -2,17 +2,21 @@ import { all, get, run, tx } from "@/db";
 import type { LessonRow, NoteRow } from "@/db/types";
 import { fail, ok } from "@/lib/http";
 import { findConflicts } from "@/lib/conflicts";
+import { resolvePrice } from "@/lib/pricing";
 
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-/** 单次课详情：课程、学生、出勤、本次笔记 */
+/** 单次课详情：课程、老师、学生、出勤、本次笔记、每人这节的课消预估 */
 export async function GET(_req: Request, ctx: Ctx) {
   try {
     const id = Number((await ctx.params).id);
-    const lesson = get<LessonRow & { course_name: string }>(
-      `select l.*, c.name as course_name from lesson l join course c on c.id = l.course_id where l.id = ?`,
+    const lesson = get<LessonRow & { course_name: string; teacher_name: string | null }>(
+      `select l.*, c.name as course_name, t.name as teacher_name
+         from lesson l join course c on c.id = l.course_id
+         left join teacher t on t.id = l.teacher_id
+        where l.id = ?`,
       [id],
     );
     if (!lesson) return fail("这节课不存在", 404);
@@ -37,12 +41,29 @@ export async function GET(_req: Request, ctx: Ctx) {
       [id],
     );
 
-    const notes = all<NoteRow>(
-      "select * from note where lesson_id = ? order by id",
+    // 每人这节课大概扣多少钱（还没记账时给个预估值，记完了就显示真实值）
+    const charged = all<{ student_id: number; amount: number | null; unit_price: number | null; delta_minutes: number }>(
+      "select student_id, amount, unit_price, delta_minutes from hours_ledger where kind = 'consume' and ref_id = ?",
       [id],
     );
+    const chargedMap = new Map(charged.map((c) => [c.student_id, c]));
+    const withPrice = students.map((s) => {
+      const real = chargedMap.get(s.student_id);
+      if (real) {
+        return {
+          ...s,
+          unit_price: real.unit_price,
+          charge_amount: real.amount ?? 0,
+          charge_estimate: false,
+        };
+      }
+      const est = resolvePrice(s.student_id, lesson.course_id, lesson.price_per_hour, lesson.minutes);
+      return { ...s, unit_price: est.unitPrice, charge_amount: est.amount ?? 0, charge_estimate: true };
+    });
 
-    return ok({ lesson, students, notes });
+    const notes = all<NoteRow>("select * from note where lesson_id = ? order by id", [id]);
+
+    return ok({ lesson, students: withPrice, notes });
   } catch (e) {
     return fail(e, 500);
   }
@@ -60,17 +81,21 @@ export async function PATCH(req: Request, ctx: Ctx) {
     const startAt = b.startAt ? String(b.startAt) : lesson.start_at;
     const minutes = b.minutes ? Number(b.minutes) : lesson.minutes;
 
-    // 改时间/时长 → 重跑冲突检测
-    if (b.startAt || b.minutes) {
+    // 改时间/时长/老师 → 重跑冲突检测
+    if (b.startAt || b.minutes || b.teacherId !== undefined) {
       const ids = all<{ student_id: number }>(
         "select student_id from lesson_student where lesson_id = ?",
         [id],
       ).map((r) => r.student_id);
-      const conflicts = findConflicts(ids, startAt, minutes, id);
+      const teacherId =
+        b.teacherId === undefined ? lesson.teacher_id : b.teacherId ? Number(b.teacherId) : null;
+      const conflicts = findConflicts(ids, startAt, minutes, id, teacherId);
       if (conflicts.length > 0 && !b.force) {
         return Response.json(
           {
-            error: `时间冲突：${conflicts.map((c) => `${c.student_name} 已有课`).join("；")}`,
+            error: `时间冲突：${conflicts
+              .map((c) => (c.kind === "teacher" ? `${c.who} 这个时段还有「${c.title}」` : `${c.who} 已有课`))
+              .join("；")}`,
             conflicts,
           },
           { status: 409 },
@@ -87,11 +112,15 @@ export async function PATCH(req: Request, ctx: Ctx) {
       room: "room",
       note: "note",
       status: "status",
+      teacherId: "teacher_id",
+      pricePerHour: "price_per_hour",
     };
     for (const [key, col] of Object.entries(map)) {
       if (b[key] !== undefined) {
         fields.push(`${col} = ?`);
-        params.push(b[key] === "" ? null : b[key]);
+        if (key === "teacherId") params.push(b[key] ? Number(b[key]) : null);
+        else if (key === "pricePerHour") params.push(b[key] === "" || b[key] === null ? null : Number(b[key]));
+        else params.push(b[key] === "" ? null : b[key]);
       }
     }
     if (fields.length === 0) return fail("没有要修改的字段");

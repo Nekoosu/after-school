@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/components/icons";
 import { MakeupModal } from "@/components/MakeupModal";
 import { MicButton } from "@/components/MicButton";
+import { StudentTimetable } from "@/components/StudentTimetable";
 import {
   Avatar,
   Badge,
@@ -111,7 +112,7 @@ interface TopicStat {
   recent_levels: string | null;
 }
 
-type TabKey = "overview" | "notes" | "topics" | "hours" | "lessons" | "payments";
+type TabKey = "overview" | "notes" | "topics" | "timetable" | "hours" | "lessons" | "payments";
 
 const KIND_OPTS = [
   { key: "progress", label: "学习进展" },
@@ -131,7 +132,7 @@ export default function StudentDetailPage() {
     // 支持 /students/5?tab=topics 这种直链，方便从别处跳过来
     if (typeof window === "undefined") return "overview";
     const t = new URLSearchParams(window.location.search).get("tab");
-    const okTabs: TabKey[] = ["overview", "notes", "topics", "hours", "lessons", "payments"];
+    const okTabs: TabKey[] = ["overview", "notes", "topics", "timetable", "hours", "lessons", "payments"];
     return okTabs.includes(t as TabKey) ? (t as TabKey) : "overview";
   });
   const [err, setErr] = useState("");
@@ -401,6 +402,7 @@ export default function StudentDetailPage() {
           { key: "overview", label: "概览" },
           { key: "notes", label: "学情", count: data.notes.length },
           { key: "topics", label: "知识点", count: data.topics.length },
+          { key: "timetable", label: "课表" },
           { key: "hours", label: "课时", count: data.ledger.length },
           { key: "lessons", label: "上课记录", count: data.lessons.length },
           { key: "payments", label: "交费", count: data.payments.length },
@@ -563,6 +565,8 @@ export default function StudentDetailPage() {
           </div>
         </Card>
       )}
+
+      {tab === "timetable" && <StudentTimetable studentId={sid} />}
 
       {tab === "hours" && (
         <Card>

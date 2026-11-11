@@ -14,12 +14,13 @@ export async function GET(req: Request) {
     const from = url.searchParams.get("from") || "0000-01-01";
     const to = url.searchParams.get("to") || "9999-12-31";
     const rows = all<LessonWithStudents>(
-      `select l.*, c.name as course_name,
+      `select l.*, c.name as course_name, c.color as course_color, t.name as teacher_name,
         (select group_concat(s.name, '、') from lesson_student ls join student s on s.id = ls.student_id
           where ls.lesson_id = l.id) as student_names,
         (select group_concat(ls.student_id, ',') from lesson_student ls
           where ls.lesson_id = l.id) as student_ids
        from lesson l join course c on c.id = l.course_id
+       left join teacher t on t.id = l.teacher_id
        where l.start_at >= ? and l.start_at <= ?
        order by l.start_at asc`,
       [from, to],
@@ -50,8 +51,18 @@ export async function POST(req: Request) {
     if (studentIds.length === 0) return fail("至少选一个学生");
     if (minutes <= 0) return fail("时长必须大于 0");
 
-    const course = get<{ id: number }>("select id from course where id = ?", [courseId]);
+    const course = get<{ id: number; teacher_id: number | null }>(
+      "select id, teacher_id from course where id = ?",
+      [courseId],
+    );
     if (!course) return fail("课程不存在", 404);
+
+    // 老师：排课时显式指定优先，否则用这门课默认的老师
+    const teacherId = b.teacherId ? Number(b.teacherId) : (course.teacher_id ?? null);
+    const pricePerHour = b.pricePerHour === 0 || b.pricePerHour ? Number(b.pricePerHour) : null;
+    if (pricePerHour !== null && (!Number.isFinite(pricePerHour) || pricePerHour < 0)) {
+      return fail("课消单价得是正数");
+    }
 
     // 重复排课：第一次就是 startAt 本身，之后每次 +7 天，时间不变
     const starts: string[] = [];
@@ -64,11 +75,11 @@ export async function POST(req: Request) {
       }
     }
 
-    const allConflicts = starts.flatMap((s) => findConflicts(studentIds, s, minutes));
+    const allConflicts = starts.flatMap((s) => findConflicts(studentIds, s, minutes, 0, teacherId));
     if (allConflicts.length > 0 && !b.force) {
       const detail = allConflicts
         .slice(0, 4)
-        .map((c) => `${mdText(c.start_at.slice(0, 10))} ${c.start_at.slice(11)}「${c.title}」`)
+        .map((c) => `${mdText(c.start_at.slice(0, 10))} ${c.start_at.slice(11)}「${c.title}」${c.kind === "teacher" ? "（这位老师）" : `（${c.who}）`}`)
         .join("；");
       const more = allConflicts.length > 4 ? ` 等 ${allConflicts.length} 处` : "";
       return Response.json(
@@ -83,17 +94,19 @@ export async function POST(req: Request) {
       const created: number[] = [];
       for (const s of starts) {
         const r = run(
-          `insert into lesson (course_id, class_id, plan_id, title, start_at, minutes, room, status)
-           values (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `insert into lesson (course_id, class_id, plan_id, teacher_id, title, start_at, minutes, room, status, price_per_hour)
+           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             courseId,
             b.classId ?? null,
             b.planId ? Number(b.planId) : null,
+            teacherId,
             b.title ?? null,
             s,
             minutes,
             b.room ?? null,
             status,
+            pricePerHour,
           ],
         );
         const lessonId = Number(r.lastInsertRowid);

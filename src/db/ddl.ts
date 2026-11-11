@@ -22,6 +22,19 @@ CREATE TABLE IF NOT EXISTS student (
 );
 CREATE INDEX IF NOT EXISTS idx_student_status ON student(status);
 
+-- 老师：一个课后班可能不止一位老师，学生的课要挂到具体老师名下
+CREATE TABLE IF NOT EXISTS teacher (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT    NOT NULL,
+  phone      TEXT,
+  subject    TEXT,
+  color      TEXT    DEFAULT '#7c5cff',
+  note       TEXT,
+  status     TEXT    NOT NULL DEFAULT 'active',
+  created_at TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_teacher_status ON teacher(status);
+
 CREATE TABLE IF NOT EXISTS course (
   id              INTEGER PRIMARY KEY,
   name            TEXT    NOT NULL,
@@ -29,6 +42,7 @@ CREATE TABLE IF NOT EXISTS course (
   default_minutes INTEGER NOT NULL DEFAULT 90,
   price_per_lesson REAL,
   color           TEXT    DEFAULT '#3b82f6',
+  teacher_id      INTEGER REFERENCES teacher(id),
   status          TEXT    NOT NULL DEFAULT 'active'
 );
 
@@ -58,12 +72,15 @@ CREATE TABLE IF NOT EXISTS lesson (
   id         INTEGER PRIMARY KEY,
   course_id  INTEGER NOT NULL REFERENCES course(id),
   class_id   INTEGER REFERENCES class_group(id) ON DELETE SET NULL,
+  teacher_id INTEGER REFERENCES teacher(id),
   title      TEXT,
   start_at   TEXT    NOT NULL,
   minutes    INTEGER NOT NULL DEFAULT 90,
   room       TEXT,
   status     TEXT    NOT NULL DEFAULT 'planned',
   note       TEXT,
+  -- 这节课的课消单价（元/小时）；空就按学生买的那个班型的单价
+  price_per_hour REAL,
   created_at TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
   updated_at TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
 );
@@ -99,6 +116,10 @@ CREATE TABLE IF NOT EXISTS hours_ledger (
   kind          TEXT    NOT NULL,
   ref_id        INTEGER,
   remark        TEXT,
+  -- 钱：purchase 时 amount 是收的钱，consume 时 amount 是这次课消的钱（负数）
+  -- unit_price 是当时的元/小时，记下来就不会因为以后调价把老账算错
+  unit_price    REAL,
+  amount        REAL,
   created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_ledger_student ON hours_ledger(student_id, created_at);

@@ -14,6 +14,9 @@ interface LessonItem {
   status: string;
   room: string | null;
   course_name: string;
+  course_color: string | null;
+  teacher_id: number | null;
+  teacher_name: string | null;
   student_names: string | null;
 }
 
@@ -29,6 +32,16 @@ interface CourseLite {
   id: number;
   name: string;
   default_minutes: number;
+  teacher_id: number | null;
+  teacher_name: string | null;
+}
+
+interface TeacherLite {
+  id: number;
+  name: string;
+  subject: string | null;
+  color: string | null;
+  status: string;
 }
 
 const WEEK_CN = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -56,6 +69,9 @@ export default function CalendarPage() {
   const [lessons, setLessons] = useState<LessonItem[] | null>(null);
   const [students, setStudents] = useState<StudentLite[]>([]);
   const [courses, setCourses] = useState<CourseLite[]>([]);
+  const [teachers, setTeachers] = useState<TeacherLite[]>([]);
+  /** 0 = 所有人；其它 = 只看这位老师的课 */
+  const [teacherFilter, setTeacherFilter] = useState(0);
   const [loading, setLoading] = useState(true);
 
   // 排课弹窗
@@ -72,12 +88,16 @@ export default function CalendarPage() {
     title: "",
     room: "",
     planId: 0,
+    teacherId: 0,
+    pricePerHour: "",
   }));
   const [picked, setPicked] = useState<number[]>([]);
   const [plans, setPlans] = useState<Array<{ id: number; title: string; course_id: number | null }>>([]);
   const [dragId, setDragId] = useState<number | null>(null);
   const [dropKey, setDropKey] = useState<string | null>(null);
-  const [liveConf, setLiveConf] = useState<Array<{ lesson_id: number; student_name: string; start_at: string; title: string }>>([]);
+  const [liveConf, setLiveConf] = useState<
+    Array<{ kind?: string; who?: string; student_name?: string; start_at: string; title: string }>
+  >([]);
   const [copying, setCopying] = useState(false);
 
   const range = useMemo(() => {
@@ -111,8 +131,12 @@ export default function CalendarPage() {
     api<CourseLite[]>("/api/courses")
       .then(setCourses)
       .catch(() => {});
-    // ?new=1 ?student= ?date=
+    api<TeacherLite[]>("/api/teachers")
+      .then((r) => setTeachers((Array.isArray(r) ? r : []).filter((t) => t.status !== "inactive")))
+      .catch(() => {});
+    // ?new=1 ?student= ?date= ?teacher=
     const sp = new URLSearchParams(window.location.search);
+    if (sp.get("teacher")) setTeacherFilter(Number(sp.get("teacher")) || 0);
     if (sp.get("new") === "1") {
       const sid = sp.get("student");
       if (sid) setPicked([Number(sid)]);
@@ -132,34 +156,40 @@ export default function CalendarPage() {
       .catch(() => {});
   }, [open]);
 
-  // 边填边查冲突：时间或学生一动就查一次（250ms 防抖），不用等点保存
+  // 边填边查冲突：时间、学生或老师一动就查一次（250ms 防抖），不用等点保存
   useEffect(() => {
-    if (!open || picked.length === 0 || !form.date || !form.time) {
+    if (!open || !form.date || !form.time || (picked.length === 0 && !form.teacherId)) {
       setLiveConf([]);
       return;
     }
     const t = setTimeout(() => {
       const startAt = `${form.date} ${form.time}`;
       fetch(
-        `/api/lessons/conflicts?startAt=${encodeURIComponent(startAt)}&minutes=${form.minutes}&studentIds=${picked.join(",")}`,
+        `/api/lessons/conflicts?startAt=${encodeURIComponent(startAt)}&minutes=${form.minutes}&studentIds=${picked.join(",")}&teacherId=${form.teacherId || 0}`,
       )
         .then((r) => r.json())
         .then((d) => setLiveConf(Array.isArray(d.conflicts) ? d.conflicts : []))
         .catch(() => setLiveConf([]));
     }, 250);
     return () => clearTimeout(t);
-  }, [open, picked, form.date, form.time, form.minutes]);
+  }, [open, picked, form.date, form.time, form.minutes, form.teacherId]);
+
+  /** 老师筛选后的课：日历、周节点数、月份圆点、打印页全部跟着它走 */
+  const shown = useMemo(
+    () => (teacherFilter ? (lessons ?? []).filter((l) => l.teacher_id === teacherFilter) : lessons ?? []),
+    [lessons, teacherFilter],
+  );
 
   const byDay = useMemo(() => {
     const map = new Map<string, LessonItem[]>();
-    for (const l of lessons ?? []) {
+    for (const l of shown) {
       const key = l.start_at.slice(0, 10);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(l);
     }
     for (const arr of map.values()) arr.sort((a, b) => a.start_at.localeCompare(b.start_at));
     return map;
-  }, [lessons]);
+  }, [shown]);
 
   function shiftWeek(delta: number) {
     const d = new Date(anchor);
@@ -191,7 +221,7 @@ export default function CalendarPage() {
 
   const monthCounts = useMemo(() => {
     const map = new Map<string, { total: number; done: number }>();
-    for (const l of lessons ?? []) {
+    for (const l of shown) {
       const key = l.start_at.slice(0, 10);
       const cur = map.get(key) ?? { total: 0, done: 0 };
       cur.total += 1;
@@ -199,7 +229,7 @@ export default function CalendarPage() {
       map.set(key, cur);
     }
     return map;
-  }, [lessons]);
+  }, [shown]);
 
   const todayKey = dstr(new Date());
   // 一门课程都还没有时，这个输入框就是「建新课程」——不能反过来要求先去选一门课
@@ -215,7 +245,11 @@ export default function CalendarPage() {
       }
       setBusy(true);
       try {
-        const c = await post<{ id: number }>("/api/courses", { name, defaultMinutes: form.minutes });
+        const c = await post<{ id: number }>("/api/courses", {
+          name,
+          defaultMinutes: form.minutes,
+          teacherId: form.teacherId || undefined,
+        });
         courseId = c.id;
         setNewCourse(false);
         setForm((f) => ({ ...f, courseId: c.id }));
@@ -250,6 +284,8 @@ export default function CalendarPage() {
           room: form.room || undefined,
           planId: form.planId || undefined,
           repeatWeeks: form.repeatWeeks,
+          teacherId: form.teacherId || undefined,
+          pricePerHour: form.pricePerHour ? Number(form.pricePerHour) : undefined,
           force,
         }),
       });
@@ -374,7 +410,29 @@ export default function CalendarPage() {
       {/* 屏幕上不再直接用整页打印，改去专门的打印页（一页一周、带教室和人名单） */}
       <div className="print-head">
         <h1>课表 · {rangeLabel}</h1>
-        <p>共 {lessons?.length ?? 0} 节</p>
+        <p>共 {shown.length} 节</p>
+      </div>
+
+      {/* 按老师看课表：点了谁就只看谁名下的课 */}
+      <div className="chip-list" style={{ padding: "10px 14px 0" }}>
+        <button className={`chip ${teacherFilter === 0 ? "on" : ""}`} onClick={() => setTeacherFilter(0)}>
+          全部老师
+        </button>
+        {teachers.map((t) => (
+          <button
+            key={t.id}
+            className={`chip ${teacherFilter === t.id ? "on" : ""}`}
+            onClick={() => setTeacherFilter(teacherFilter === t.id ? 0 : t.id)}
+            title="只看这位老师名下的课"
+          >
+            <i className="dot" style={{ background: t.color || "var(--violet)", opacity: 1 }} />
+            {t.name}
+          </button>
+        ))}
+        <a className="chip" href="/teachers" title="登记老师、改任教课程">
+          <Icon name="users" size={13} />
+          管理老师
+        </a>
       </div>
 
       <Card>
@@ -464,6 +522,7 @@ export default function CalendarPage() {
                       <span className="t">{timeOf(l.start_at)}</span>
                       <span className="n">{l.course_name}</span>
                       <span className="s">{l.student_names ?? ""}</span>
+                      {l.teacher_name ? <span className="tch">{l.teacher_name}</span> : null}
                     </a>
                   ))}
                   {items.length === 0 ? <div className="day-empty">没课</div> : null}
@@ -592,11 +651,21 @@ export default function CalendarPage() {
               </>
             ) : (
               <>
-                <select className="select" value={form.courseId} onChange={(e) => setForm({ ...form, courseId: Number(e.target.value) })}>
+                <select
+                  className="select"
+                  value={form.courseId}
+                  onChange={(e) => {
+                    const id = Number(e.target.value);
+                    const c = courses.find((x) => x.id === id);
+                    // 选课顺手带出这门课的老师，省一步
+                    setForm((f) => ({ ...f, courseId: id, teacherId: c?.teacher_id ?? f.teacherId }));
+                  }}
+                >
                   <option value={0}>选择课程…</option>
                   {courses.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
+                      {c.teacher_name ? `（${c.teacher_name}）` : ""}
                     </option>
                   ))}
                 </select>
@@ -612,6 +681,41 @@ export default function CalendarPage() {
           </Field>
           <Field label="教室">
             <input className="input" value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} placeholder="可选" />
+          </Field>
+          <Field
+            label="上课老师"
+            hint={
+              teachers.length === 0
+                ? "还没登记老师，去「老师」页加一位"
+                : form.teacherId
+                  ? "这个人同一时段不能再排别的课"
+                  : "留空就是不指定老师"
+            }
+          >
+            <select
+              className="select"
+              value={form.teacherId}
+              onChange={(e) => setForm({ ...form, teacherId: Number(e.target.value) })}
+            >
+              <option value={0}>不指定</option>
+              {teachers.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                  {t.subject ? ` · ${t.subject}` : ""}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="课消单价" hint="元 / 小时。留空就按这学生最近一次充值的单价走">
+            <input
+              className="input"
+              type="number"
+              min={0}
+              step="0.01"
+              value={form.pricePerHour}
+              onChange={(e) => setForm({ ...form, pricePerHour: e.target.value })}
+              placeholder="留空自动算"
+            />
           </Field>
           <Field label="用哪篇教案" span2 hint="选了之后，这节课的页面里能直接看到教案">
             <select className="select" value={form.planId} onChange={(e) => setForm({ ...form, planId: Number(e.target.value) })}>
@@ -658,7 +762,10 @@ export default function CalendarPage() {
               <b>这个时间已经有人有课了</b>
               <div className="fs-sm" style={{ marginTop: 4 }}>
                 {liveConf
-                  .map((c) => `${c.student_name} ${c.start_at.slice(11)} 已有「${c.title}」`)
+                  .map((c) => {
+                    const who = c.kind === "teacher" ? `老师 ${c.who ?? ""}` : `学生 ${c.who ?? c.student_name ?? ""}`;
+                    return `${who} ${c.start_at.slice(11)} 已有「${c.title}」`;
+                  })
                   .join("；")}
               </div>
               <div className="fs-sm muted" style={{ marginTop: 4 }}>

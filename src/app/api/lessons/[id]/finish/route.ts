@@ -2,6 +2,7 @@ import { all, get, run, tx } from "@/db";
 import type { LessonRow } from "@/db/types";
 import { fail, ok } from "@/lib/http";
 import { billedMinutes } from "@/lib/hours";
+import { resolvePrice } from "@/lib/pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -45,11 +46,18 @@ export async function POST(req: Request, ctx: Ctx) {
     const result = tx(() => {
       let billedTotal = 0;
       let noteCount = 0;
+      let chargeTotal = 0;
+      const charged: Array<{ studentId: number; billed: number; amount: number | null; unitPrice: number | null }> = [];
 
       for (const sid of enrolled) {
         const it = byStudent.get(sid) ?? { studentId: sid, status: "present" as const };
         const billed = billedMinutes(it.status, lesson.minutes);
         billedTotal += billed;
+
+        // 课消：单价按「这节课指定 → 学生买的价 → 课程标价」取，金额当快照写进流水
+        const price = resolvePrice(sid, lesson.course_id, lesson.price_per_hour, billed);
+        if (price.amount) chargeTotal += price.amount;
+        charged.push({ studentId: sid, billed, amount: price.amount, unitPrice: price.unitPrice });
 
         run(
           `insert into attendance (lesson_id, student_id, status, billed_minutes, note)
@@ -63,9 +71,9 @@ export async function POST(req: Request, ctx: Ctx) {
 
         if (billed > 0) {
           run(
-            `insert into hours_ledger (student_id, course_id, delta_minutes, kind, ref_id, remark)
-             values (?, ?, ?, 'consume', ?, ?)`,
-            [sid, lesson.course_id, -billed, id, it.note ?? null],
+            `insert into hours_ledger (student_id, course_id, delta_minutes, kind, ref_id, remark, unit_price, amount)
+             values (?, ?, ?, 'consume', ?, ?, ?, ?)`,
+            [sid, lesson.course_id, -billed, id, it.note ?? null, price.unitPrice, price.amount],
           );
         }
 
@@ -82,7 +90,7 @@ export async function POST(req: Request, ctx: Ctx) {
         "update lesson set status = 'done', updated_at = datetime('now','localtime') where id = ?",
         [id],
       );
-      return { billedTotal, noteCount, students: enrolled.length };
+      return { billedTotal, noteCount, students: enrolled.length, chargeTotal, charged };
     });
 
     return ok({ ok: true, ...result });

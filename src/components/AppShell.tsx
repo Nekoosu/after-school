@@ -33,6 +33,7 @@ const GROUPS: NavGroup[] = [
   {
     label: "教学",
     links: [
+      { href: "/teachers", label: "老师", icon: "cap" },
       { href: "/feedback", label: "家长反馈", icon: "message", badge: "pending" },
       { href: "/plans", label: "备课", icon: "book" },
       { href: "/records", label: "上课记录", icon: "clipboard" },
@@ -70,6 +71,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/lessons\/\d+\/wrap/, "跟家长说一句"],
   [/^\/lessons\/\d+/, "记一笔"],
   [/^\/feedback/, "家长反馈"],
+  [/^\/teachers/, "老师"],
   [/^\/plans/, "备课"],
   [/^\/records/, "上课记录"],
   [/^\/monthly/, "月报"],

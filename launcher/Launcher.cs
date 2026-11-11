@@ -12,21 +12,23 @@ using System.Windows.Forms;
 namespace AfterSchool
 {
     /// <summary>
-    /// 课后服务管理 —— 桌面启动器。
-    /// 干三件事：找一个能用的端口、把 app\node.exe 起起来、等服务 /api/health 通了就打开浏览器。
-    /// 窗口关掉就把 node 子进程一起结束，不留后台。
+    /// 课后服务管理 —— 桌面启动器（1.6.0 起改成「打开就是软件」）。
+    /// 流程：找一个能用的端口 → 起 app\node.exe → 等 /api/health 通 → 用 Edge 的
+    /// --app 模式开出无地址栏的窗口（看着就是一个桌面软件）→ 窗口关掉就优雅停机。
     /// 用 C# 5 写（本机 csc 只支持到 C# 5，别用 $"..."、nameof、?.）。
     /// </summary>
     static class Launcher
     {
         static Process child;
+        static Process appWindow;
         static string appDir;
         static string dataDir;
+        static string profileDir;
         static int port;
         static volatile bool ready;
         static volatile string lastError = "";
         static Label statusLabel;
-        static Button openButton;
+        static Form splash;
         static IntPtr jobHandle = IntPtr.Zero;
 
         // 让 node 子进程跟启动器同生共死：即使启动器被任务管理器强杀，
@@ -90,6 +92,7 @@ namespace AfterSchool
             string exeDir = AppDomain.CurrentDomain.BaseDirectory;
             appDir = Join(exeDir, "app");
             dataDir = Join(appDir, "data");
+            profileDir = Join(dataDir, "window-profile");
 
             try
             {
@@ -101,11 +104,13 @@ namespace AfterSchool
                 }
                 Directory.CreateDirectory(dataDir);
 
-                // 已经有一份在跑：直接开浏览器，不再起第二个
+                // 已经有一份在跑：直接开窗口，不再起第二个
                 int running = ReadPortFile();
                 if (running > 0 && Health(running))
                 {
-                    OpenBrowser(running);
+                    port = running;
+                    OpenAppWindow();
+                    if (appWindow != null) appWindow.WaitForExit();
                     return;
                 }
 
@@ -122,7 +127,21 @@ namespace AfterSchool
                 t.IsBackground = true;
                 t.Start();
 
-                ShowWindow();
+                ShowSplash();
+                if (!ready)
+                {
+                    KillChild();
+                    return;
+                }
+
+                // 服务好了，把启动画面收起来，换成真正的应用窗口
+                OpenAppWindow();
+                if (appWindow != null)
+                {
+                    appWindow.WaitForExit();
+                }
+                ShutdownServer();
+                KillChild();
             }
             catch (Exception ex)
             {
@@ -208,6 +227,8 @@ namespace AfterSchool
             psi.StandardErrorEncoding = Encoding.UTF8;
             psi.EnvironmentVariables["NODE_ENV"] = "production";
             psi.EnvironmentVariables["NEXT_TELEMETRY_DISABLED"] = "1";
+            // 告诉服务端「你是被桌面启动器拉起来的」：关窗口时它才允许 /api/shutdown 自停
+            psi.EnvironmentVariables["AS_LAUNCHED"] = "1";
 
             child = new Process();
             child.StartInfo = psi;
@@ -282,13 +303,24 @@ namespace AfterSchool
                 {
                     ready = true;
                     try { File.WriteAllText(Join(dataDir, ".port"), port.ToString(), Encoding.ASCII); } catch { }
-                    OpenBrowser(port);
-                    UpdateUi();
+                    CloseSplash();
                     return;
                 }
-                Thread.Sleep(600);
+                Thread.Sleep(500);
             }
-            UpdateUi();
+            UpdateSplash();
+        }
+
+        static void CloseSplash()
+        {
+            try
+            {
+                if (splash != null && splash.Visible)
+                {
+                    splash.BeginInvoke(new MethodInvoker(delegate { splash.Close(); }));
+                }
+            }
+            catch { }
         }
 
         static void OpenBrowser(int p)
@@ -296,28 +328,103 @@ namespace AfterSchool
             try { Process.Start("http://127.0.0.1:" + p.ToString() + "/"); } catch { }
         }
 
-        static void UpdateUi()
+        /// <summary>找 Edge 的可执行文件；找不到返回 null。</summary>
+        static string FindEdge()
+        {
+            string[] roots = new string[] {
+                Environment.GetEnvironmentVariable("ProgramFiles(x86)"),
+                Environment.GetEnvironmentVariable("ProgramFiles"),
+                Environment.GetEnvironmentVariable("LocalAppData")
+            };
+            for (int i = 0; i < roots.Length; i++)
+            {
+                if (string.IsNullOrEmpty(roots[i])) continue;
+                string p = Join(roots[i], "Microsoft\\Edge\\Application\\msedge.exe");
+                try { if (File.Exists(p)) return p; } catch { }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 用 Edge 的 --app 模式开一个没有地址栏、没有标签页的窗口，
+        /// 看起来就是一个独立软件；这个窗口关掉，进程就退出，我们据此停机。
+        /// </summary>
+        static void OpenAppWindow()
+        {
+            string edge = FindEdge();
+            if (edge == null)
+            {
+                OpenBrowser(port);
+                return;
+            }
+            try
+            {
+                try { Directory.CreateDirectory(profileDir); } catch { }
+
+                ProcessStartInfo psi = new ProcessStartInfo();
+                psi.FileName = edge;
+                psi.Arguments = "--app=" + Url() +
+                    " --user-data-dir=\"" + profileDir + "\"" +
+                    " --no-first-run --no-default-browser-check --disable-features=msEdgeSidebarV2" +
+                    " --window-size=1320,900";
+                psi.UseShellExecute = false;
+                appWindow = Process.Start(psi);
+            }
+            catch
+            {
+                OpenBrowser(port);
+            }
+        }
+
+        /// <summary>请服务端自己收尾（WAL 写回主库）再退出，等不到就靠 KillChild 兜底。</summary>
+        static void ShutdownServer()
         {
             try
             {
-                statusLabel.Text = ready
-                    ? "正在运行，浏览器里可以开始用了。\r\n地址：" + Url() + "\r\n关掉这个窗口就等于关掉软件。"
-                    : "启动中…\r\n" + (lastError.Length > 0 ? "最后一条提示：" + lastError : "第一次打开要建数据库，稍等十几秒。");
-                openButton.Enabled = ready;
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(Url() + "api/shutdown");
+                req.Method = "POST";
+                req.Timeout = 3000;
+                req.Proxy = null;
+                req.ContentLength = 0;
+                using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
+                {
+                    res.Close();
+                }
+            }
+            catch { }
+
+            try
+            {
+                if (child != null && !child.HasExited) child.WaitForExit(4000);
             }
             catch { }
         }
 
-        static void ShowWindow()
+        static void UpdateSplash()
+        {
+            try
+            {
+                if (statusLabel == null) return;
+                statusLabel.Text = ready
+                    ? "准备好了。"
+                    : "正在启动…\r\n" + (lastError.Length > 0 ? lastError : "第一次打开要建数据库，稍等十几秒。");
+            }
+            catch { }
+        }
+
+        /// <summary>启动画面：只是一块「正在启动」，服务好了自动关掉换成应用窗口。</summary>
+        static void ShowSplash()
         {
             Form f = new Form();
             f.Text = "课后服务管理";
-            f.Width = 460;
-            f.Height = 220;
+            f.Width = 420;
+            f.Height = 172;
             f.StartPosition = FormStartPosition.CenterScreen;
             f.FormBorderStyle = FormBorderStyle.FixedSingle;
             f.MaximizeBox = false;
+            f.MinimizeBox = false;
             f.BackColor = Color.White;
+            f.ShowInTaskbar = true;
 
             try
             {
@@ -330,36 +437,27 @@ namespace AfterSchool
             title.Text = "课后服务管理";
             title.Font = new Font("Microsoft YaHei UI", 13F, FontStyle.Bold);
             title.AutoSize = true;
-            title.Location = new Point(22, 18);
+            title.Location = new Point(22, 16);
             f.Controls.Add(title);
 
             statusLabel = new Label();
-            statusLabel.Text = "启动中…";
+            statusLabel.Text = "正在启动…";
             statusLabel.Font = new Font("Microsoft YaHei UI", 9F);
-            statusLabel.Location = new Point(24, 56);
-            statusLabel.Size = new Size(400, 70);
+            statusLabel.Location = new Point(24, 54);
+            statusLabel.Size = new Size(360, 52);
             f.Controls.Add(statusLabel);
 
-            openButton = new Button();
-            openButton.Text = "打开界面";
-            openButton.Location = new Point(24, 132);
-            openButton.Size = new Size(120, 32);
-            openButton.Enabled = false;
-            openButton.Click += delegate { OpenBrowser(port); };
-            f.Controls.Add(openButton);
+            Button cancel = new Button();
+            cancel.Text = "取消";
+            cancel.Location = new Point(300, 116);
+            cancel.Size = new Size(84, 28);
+            cancel.Click += delegate { f.Close(); };
+            f.Controls.Add(cancel);
 
-            Button stop = new Button();
-            stop.Text = "关闭软件";
-            stop.Location = new Point(300, 132);
-            stop.Size = new Size(120, 32);
-            stop.Click += delegate { f.Close(); };
-            f.Controls.Add(stop);
-
-            if (ready) UpdateUi();
-
-            f.FormClosing += delegate { KillChild(); };
+            f.FormClosing += delegate { if (!ready) KillChild(); };
+            splash = f;
             Application.Run(f);
-            KillChild();
+            splash = null;
         }
 
         static void KillChild()

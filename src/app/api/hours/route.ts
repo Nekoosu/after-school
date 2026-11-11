@@ -21,17 +21,33 @@ export async function POST(req: Request) {
     const student = get<{ id: number }>("select id from student where id = ?", [studentId]);
     if (!student) return fail("学生不存在", 404);
 
+    // 充值时把「这次买的是哪个班型、多少钱」记下来：以后每节课的课消就按这个单价扣
+    const minutesForPrice = kind === "purchase" ? deltaMinutes : 0;
+    const amount = b.amount === undefined || b.amount === null || b.amount === "" ? null : Number(b.amount);
+    const unitPrice =
+      amount !== null && amount > 0 && minutesForPrice > 0
+        ? Math.round((amount / minutesForPrice) * 60 * 100) / 100
+        : null;
+
     tx(() => {
       run(
-        `insert into hours_ledger (student_id, course_id, delta_minutes, kind, remark)
-         values (?, ?, ?, ?, ?)`,
-        [studentId, b.courseId ?? null, deltaMinutes, kind, b.remark ?? null],
+        `insert into hours_ledger (student_id, course_id, delta_minutes, kind, remark, unit_price, amount)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          studentId,
+          b.courseId ? Number(b.courseId) : null,
+          deltaMinutes,
+          kind,
+          b.remark ?? null,
+          unitPrice,
+          amount !== null && amount > 0 ? amount : null,
+        ],
       );
       // 有金额就顺带记一笔收款
-      if (b.amount !== undefined && b.amount !== null && Number(b.amount) > 0) {
+      if (amount !== null && amount > 0) {
         run(
           `insert into payment (student_id, amount, minutes, method, remark) values (?, ?, ?, ?, ?)`,
-          [studentId, Number(b.amount), deltaMinutes, b.method ?? null, b.remark ?? null],
+          [studentId, amount, deltaMinutes, b.method ?? null, b.remark ?? null],
         );
       }
     });
@@ -40,7 +56,7 @@ export async function POST(req: Request) {
       "select balance_minutes, balance_hours from v_student_balance where student_id = ?",
       [studentId],
     );
-    return ok({ ok: true, ...balance }, 201);
+    return ok({ ok: true, unitPrice, ...balance }, 201);
   } catch (e) {
     return fail(e);
   }

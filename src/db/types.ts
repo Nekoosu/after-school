@@ -25,7 +25,28 @@ export interface CourseRow {
   default_minutes: number;
   price_per_lesson: number | null;
   color: string | null;
+  teacher_id: number | null;
   status: string;
+}
+
+/** 老师 */
+export interface TeacherRow {
+  id: number;
+  name: string;
+  phone: string | null;
+  subject: string | null;
+  color: string | null;
+  note: string | null;
+  status: string;
+  created_at: string;
+}
+
+/** 老师 + 统计（老师页用） */
+export interface TeacherWithStats extends TeacherRow {
+  course_names: string | null;
+  student_count: number;
+  week_lessons: number;
+  week_minutes: number;
 }
 
 export interface ClassRow {
@@ -44,12 +65,14 @@ export interface LessonRow {
   course_id: number;
   class_id: number | null;
   plan_id: number | null;
+  teacher_id: number | null;
   title: string | null;
   start_at: string;
   minutes: number;
   room: string | null;
   status: string;
   note: string | null;
+  price_per_hour: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -72,6 +95,8 @@ export interface LedgerRow {
   kind: string;
   ref_id: number | null;
   remark: string | null;
+  unit_price: number | null;
+  amount: number | null;
   created_at: string;
 }
 
@@ -96,6 +121,8 @@ export interface StudentWithBalance extends StudentRow {
 /** 课 + 学生（日历用） */
 export interface LessonWithStudents extends LessonRow {
   course_name: string;
+  course_color: string | null;
+  teacher_name: string | null;
   student_names: string | null;
   student_ids: string | null;
 }

@@ -14,6 +14,10 @@ export interface LedgerWithName {
   remark: string | null;
   created_at: string;
   course_name: string | null;
+  /** 这笔的单价（元/小时）；充值记的是「买进来」的单价，课消记的是「扣出去」的 */
+  unit_price: number | null;
+  /** 金额：充值=收的钱，课消=这一节扣的钱 */
+  amount: number | null;
 }
 
 /** 单个学生：档案 + 余额 + 课时流水 + 学情时间线 + 上课记录 */
@@ -29,7 +33,8 @@ export async function GET(_req: Request, ctx: Ctx) {
     );
 
     const ledger = all<LedgerWithName>(
-      `select l.id, l.delta_minutes, l.kind, l.ref_id, l.remark, l.created_at, c.name as course_name
+      `select l.id, l.delta_minutes, l.kind, l.ref_id, l.remark, l.created_at,
+              l.unit_price, l.amount, c.name as course_name
        from hours_ledger l left join course c on c.id = l.course_id
        where l.student_id = ?
        order by l.id desc limit 100`,

@@ -191,18 +191,19 @@ scripts/
   open-when-ready.ps1         轮询端口，服务真的通了再开浏览器（不要再改回固定 sleep）
 ```
 
-## 数据表（13 张 + 2 个视图）
+## 数据表（14 张 + 2 个视图）
 
 | 表 | 作用 | 关键约定 |
 | --- | --- | --- |
 | `student` | 学生档案 | 软删 `status='left'`；`tags` 是逗号分隔的标签 |
-| `course` | 课程科目 | `default_minutes`、`price_per_lesson` |
+| `teacher` | 老师 | `name` 必填；`subject`/`phone`/`color`/`note`；`status` active/inactive（软停用） |
+| `course` | 课程科目 | `default_minutes`、`price_per_lesson`、`teacher_id`（一课一师） |
 | `class_group` | 固定班 | `weekday` 0-6、`start_time` `HH:mm` |
 | `enrollment` | 班与学生的关系 | 整份替换，不做增量 |
-| `lesson` | 一节课 | `start_at` `YYYY-MM-DD HH:mm`；`status` planned/done/cancelled/makeup；`plan_id` 挂教案 |
+| `lesson` | 一节课 | `start_at` `YYYY-MM-DD HH:mm`；`status` planned/done/cancelled/makeup；`plan_id` 挂教案；`teacher_id`、`price_per_hour`（这节的课消单价，可空） |
 | `lesson_student` | 一节课的学生名单 | |
 | `attendance` | 出勤明细 | `status` present/leave/absent/makeup；`billed_minutes` 是实扣 |
-| `hours_ledger` | 课时流水（唯一账本） | `delta_minutes` 正负；`kind` purchase/gift/adjust/refund/consume |
+| `hours_ledger` | 课时流水（唯一账本） | `delta_minutes` 正负；`kind` purchase/gift/adjust/refund/consume；`unit_price`/`amount`（purchase=收的钱，consume=这节的课消） |
 | `note` | 学情记录 | 只追加；`kind` progress/homework/behavior/parent；`level` 1-4 |
 | `feedback` | 家长反馈 | `status` draft/sent，发出时写 `sent_at` |
 | `payment` | 收款 | 一条收款 = 一条 purchase 流水 |
@@ -470,3 +471,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ui-check.ps1
 **2026-11-11 用户拍板：Mac 版「不能用」，全套已删除。** 当时做过一轮：`scripts/package-mac.sh`（在 Mac 上构建 .app 的脚本）+ `launcher/mac/{start.sh,stop.sh,停止课后服务.command}` + `launcher/使用说明-mac.txt` + 在 Windows 上「盲拼」的 darwin-arm64 包（`release/mac/after-school-1.5.0-macos-arm64.zip`，已从本地与 GitHub release 删掉）。为什么 Windows 出不了能跑的 Mac 包（留档备查）：① `better-sqlite3` 是原生模块，要 darwin prebuild；② `.app` 的可执行权限位 Windows 压缩工具存不下；③ 无法实测。盲拼包结构上校验过（Mach-O 魔数 + 权限位）但没法真实运行，用户实测判定不能用。
 
 **教训（如果以后重新做 Mac 版）**：唯一可靠路径是把源码拿到任意一台 Mac 上现场构建（当时写的 package-mac.sh 思路：`npm install` → `next build` → 组装 .app → `npm install --omit=dev` 让 prebuild-install 拿 darwin 原生模块 → tar 打包保权限位 → 有 `hdiutil` 顺带出 .dmg）；在 Windows 上盲拼预置包只能做到「结构正确」，运行是否可用无法验证——这次就是栽在这。
+## 29. 老师、课消与「打开就是软件」（1.6.0）
+
+**老师是一等公民**：`teacher` 表（name 必填 + subject/phone/color/note/status），`course.teacher_id` 一课一个老师，`lesson.teacher_id` 是这节课实际由谁上（默认继承课程，排课时可改）。
+
+- 冲突检查现在分两种：`findStudentConflicts()` 与 `findTeacherConflicts()`，`findConflicts()` 合并返回，`ConflictRow.kind` 是 `"student" | "teacher"`。**老师不能同时出现在两个教室**，前端黄条文案按 `kind` 说「老师 X」还是「学生 Y」。
+- 删老师有讲究：**上过课的老师只软停用**（`status='inactive'`，历史课还要显示名字），一节都没上过的才真删（先把 `course.teacher_id` 置 null）。DELETE 返回 `{ok, soft: boolean, lessons?: n}`。前端卡片 `.teacher-card.off` 降透明度，列表默认还在。
+- 老师页统计（本周节数/课时/学生数）是**当场聚合**，不进统计表；`weekRange()` 用 `toDateStr` 算本周一~周日，别用 `new Date().toISOString()`（UTC 会错一天）。
+
+**课消单价（`src/lib/pricing.ts` 的 `resolvePrice()`）**：四级顺序 ① 这节课填的 `price_per_hour` → ② 该生这门课最近一次 `purchase` 流水的单价 → ③ 任何学生这门课最近一次 `purchase` 的单价 → ④ `course.price_per_lesson` 按 `default_minutes` 折成每小时。一个都取不到就只扣课时、不记金额。
+- 单价恒为「元/小时」，金额 `= round2(unitPrice * billedMinutes / 60)`，全部四舍五入到分（`round2`）。
+- 充值时就按 `amount/minutes*60` 算好 `unit_price` 写进流水（`kind='purchase'`），这样以后调课程标价不会改动历史课的金额。
+- **接口里 `charge_estimate` 是布尔标志，不是金额**（`{charge_amount, unit_price, charge_estimate: true}` = 「这是预估、还没记账」）。写测试/画界面都别把它当数字用——smoke15 第一次就栽在这。
+- 只有 `present`/`makeup` 才产生课消；`leave`/`absent`（按设置不扣时）金额为 0。
+
+**桌面壳改成「打开就是软件」**：启动器不再开浏览器标签页，而是用 Edge 的 `--app=` 模式拉一个无地址栏无标签页的窗口。
+- `StartServer()` 给 node 子进程加 `AS_LAUNCHED=1`；`POST /api/shutdown` **只有这个环境变量存在时才允许**（否则 403），先 `wal_checkpoint(TRUNCATE)` 再 `process.exit(0)`——网页里手动 curl 关不掉服务。
+- `--user-data-dir="<app>\data\window-profile"` 是必须的：不带它，Edge 会复用用户日常配置，窗口标题、Cookie、扩展全混在一起；带了它才能保证 app 模式独立、且「已经开着」时二次启动立刻退出。
+- 窗口进程 `WaitForExit()` 返回就是用户关了窗口 → 调 `/api/shutdown` 让它优雅收尾 → 再 `KillChild()` 兜底（`taskkill /PID /T /F`）。Job Object `KILL_ON_JOB_CLOSE` 保证启动器被强杀时 node 不会变孤儿。
+- 找不到 Edge 才退回 `OpenBrowser()`；这两个分支都要能跑通，别只测一个。
+
+**smoke15 的坑（写新冒烟时注意）**：测「学生课表」的课必须排在 **−14 天 ~ +35 天** 之间（timetable 接口的窗口），排到 +40 天就会拿到空数组，看着像功能坏了。

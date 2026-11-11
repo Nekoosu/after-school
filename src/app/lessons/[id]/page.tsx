@@ -27,6 +27,12 @@ interface LessonStudent {
   att_status: string | null;
   billed_minutes: number | null;
   att_note: string | null;
+  /** 这节的单价（元/小时）；已记账取真实值，未记则是按规则估的 */
+  unit_price: number | null;
+  /** 已经记账的真实课消金额；null = 还没记账 */
+  charge_amount: number | null;
+  /** 还没记账时，按「出勤」估的课消金额 */
+  charge_estimate: number | null;
 }
 
 interface LessonDetail {
@@ -41,6 +47,7 @@ interface LessonDetail {
     note: string | null;
     plan_id: number | null;
     course_name?: string;
+    teacher_name?: string | null;
   };
   students: LessonStudent[];
   notes: Array<{ id: number; student_id: number; kind: string; content: string; created_at: string; level: number | null }>;
@@ -264,6 +271,7 @@ export default function LessonPage() {
           </h1>
           <p className="page-sub">
             {l.start_at.slice(0, 10)}　{timeOf(l.start_at)}　·　{durationText(l.minutes)}　·　
+            {l.teacher_name ? `${l.teacher_name}　·　` : ""}
             {l.room ? `${l.room}　·　` : ""}
             {data.students.length} 人
           </p>
@@ -402,6 +410,9 @@ export default function LessonPage() {
               {data.students.map((s) => {
                 const r = rows[s.student_id] ?? { status: "present" as AttStatus, note: "" };
                 const noBal = r.status === "present" || r.status === "makeup" ? s.balance_minutes < l.minutes : false;
+                // 这节课这个人要扣多少钱：已记完取真实值，没记完取按规则估的
+                const billedNow = r.status === "present" || r.status === "makeup";
+                const charge = s.charge_amount ?? s.charge_estimate;
                 return (
                   <Card key={s.student_id}>
                     <div className="card-body">
@@ -416,6 +427,13 @@ export default function LessonPage() {
                             剩余 <b className={noBal ? "danger" : ""}>{toHours(s.balance_minutes)}</b> 小时
                             {noBal ? <span className="danger">　课时不够扣一次了，记得提醒续费</span> : null}
                           </div>
+                          {billedNow && charge !== null ? (
+                            <div className="fs-sm muted">
+                              本次课消 <b className="strong">￥{charge}</b>
+                              {s.unit_price ? `　·　${s.unit_price} 元/小时` : ""}
+                              {s.charge_amount === null ? <span className="dim">　（记完才落地）</span> : null}
+                            </div>
+                          ) : null}
                         </div>
                         <Link href={`/students/${s.student_id}`} className="btn btn-sm btn-ghost">
                           详情
