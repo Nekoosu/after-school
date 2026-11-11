@@ -287,7 +287,7 @@ export default function RecordsPage() {
           <Card>
             <CardHead title="上课明细" sub={`${dateOnly(rows[rows.length - 1].start_at)} 至 ${dateOnly(rows[0].start_at)}`} />
             <div className="table-wrap">
-              <table className="table clickable compact">
+              <table className="table clickable compact wide">
                 <thead>
                   <tr>
                     <th>时间</th>

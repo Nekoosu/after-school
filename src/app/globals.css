@@ -3263,6 +3263,18 @@ button {
 
 .print-note {
   color: var(--ink-2);
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* 备注后面那条线用边框画，别用一长串下划线（会顶到页边、把打印时间挤出去） */
+.print-note-line {
+  flex: 1 1 auto;
+  min-width: 60px;
+  height: 13px;
+  border-bottom: 1px solid var(--line);
 }
 
 @media print {
@@ -4537,4 +4549,77 @@ html { scroll-behavior: smooth; }
   color: var(--warn);
   background: var(--warn-weak);
   font-weight: 600;
+}
+
+/* ---------- 窄窗口适配（1.7.0） ----------
+   窗口拉窄（或 768 的平板）时，列多的表格别把中文挤成竖排——
+   给个最小宽度，放不下就横向滚，比一个字一行体面得多。 */
+@media (max-width: 980px) {
+  .table-wrap > .table {
+    min-width: 660px;
+  }
+  /* 九列的上课记录再宽一点，否则「学生 / 课程」会一个字一行 */
+  .table-wrap > .table.wide {
+    min-width: 900px;
+  }
+  /* 课表在 620~980 之间用两列，别一上来就堆成一长条 */
+  .week-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+}
+@media (max-width: 620px) {
+  .week-grid {
+    grid-template-columns: 1fr;
+  }
+  /* 手机上一行只放得下一个大按钮，页头操作竖着排更顺手 */
+  .page-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .page-head-actions {
+    width: 100%;
+  }
+  .page-head-actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+/* ---------- 打印：一律按浅色出纸（1.7.0） ----------
+   深色主题下点「打印」，纸上是浅底黑字才对；
+   这里把 token 换回浅色一套，只影响打印媒体。 */
+@media print {
+  /* 纸边留一圈，别让内容顶着纸边（存 PDF 也一样） */
+  @page {
+    margin: 12mm 10mm;
+  }
+  :root,
+  :root[data-theme="dark"] {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f8f9fb;
+    --surface-3: #eef0f4;
+    --line: #d5d9e0;
+    --line-2: #e3e6eb;
+    --line-3: #edeff3;
+    --ink: #101828;
+    --ink-2: #344054;
+    --ink-3: #667085;
+    --ink-4: #98a2b3;
+    --brand: #2563eb;
+    --brand-weak: rgba(37, 99, 235, 0.1);
+    --brand-weak-2: rgba(37, 99, 235, 0.2);
+    --brand-ink: #1d4ed8;
+    --ok: #0f9d63;
+    --warn: #c2751a;
+    --bad: #dc3d43;
+    --violet: #7c5cff;
+    --cyan: #0d8fa8;
+  }
+  .print-dim,
+  .print-sheet-sub {
+    white-space: nowrap;
+  }
 }

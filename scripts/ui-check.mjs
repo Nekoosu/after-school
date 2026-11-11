@@ -577,7 +577,56 @@ async function main() {
     );
     ok("设置页有数据体检卡", diagRows === 5, `diag-row = ${diagRows}`);
 
-    console.log("\n[22] 控制台错误");
+    console.log("\n[22] 窄窗口适配（375 / 768）");
+    await send("Emulation.setDeviceMetricsOverride", {
+      width: 375,
+      height: 812,
+      deviceScaleFactor: 1,
+      mobile: true,
+    });
+    await goto("/calendar", "");
+    await sleep(1400);
+    const phone = await evalJS(`return (() => {
+      const tabbar = document.querySelector(".tabbar");
+      const nw = document.querySelector(".topbar-new");
+      const grid = document.querySelector(".week-grid");
+      const cols = grid ? getComputedStyle(grid).gridTemplateColumns.split(" ").length : 0;
+      return {
+        tabbar: tabbar ? getComputedStyle(tabbar).display !== "none" : false,
+        newHidden: nw ? getComputedStyle(nw).display === "none" : true,
+        cols: cols,
+      };
+    })();`);
+    ok("375 宽时有底部导航", Boolean(phone && phone.tabbar), JSON.stringify(phone));
+    ok("375 宽时顶栏「新建」收起来", Boolean(phone && phone.newHidden), JSON.stringify(phone));
+    ok("375 宽时课表一列", Boolean(phone && phone.cols === 1), JSON.stringify(phone));
+
+    await send("Emulation.setDeviceMetricsOverride", {
+      width: 768,
+      height: 1024,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await goto("/calendar", "");
+    await sleep(1200);
+    const pad = await evalJS(`return (() => {
+      const grid = document.querySelector(".week-grid");
+      return grid ? getComputedStyle(grid).gridTemplateColumns.split(" ").length : 0;
+    })();`);
+    ok("768 宽时课表两列", Number(pad) === 2, `cols = ${pad}`);
+
+    await goto("/records", "");
+    await sleep(1400);
+    const wide = await evalJS(`return (() => {
+      const t = document.querySelector(".table.wide");
+      return t ? Math.round(t.getBoundingClientRect().width) : 0;
+    })();`);
+    ok("768 宽时上课记录表横向滚动而不是挤成竖排", Number(wide) >= 880, `table width = ${wide}`);
+
+    await send("Emulation.clearDeviceMetricsOverride");
+    await sleep(400);
+
+    console.log("\n[23] 控制台错误");
     const real = errors.filter((e) => e && !/favicon|Failed to load resource: the server responded with a status of 404/i.test(e));
     ok("页面没有脚本报错", real.length === 0, real.slice(0, 3).join(" | "));
   } finally {

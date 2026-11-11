@@ -218,16 +218,37 @@ namespace AfterSchool
         {
             try
             {
-                if (!File.Exists(WindowFile())) return;
-                string[] parts = File.ReadAllText(WindowFile()).Trim().Split('x');
-                if (parts.Length != 2) return;
-                int w, h;
-                if (!int.TryParse(parts[0], out w) || !int.TryParse(parts[1], out h)) return;
-                if (w >= 800 && w <= 4000 && h >= 600 && h <= 3000)
+                if (File.Exists(WindowFile()))
                 {
-                    winW = w;
-                    winH = h;
+                    string[] parts = File.ReadAllText(WindowFile()).Trim().Split('x');
+                    if (parts.Length == 2)
+                    {
+                        int w, h;
+                        if (int.TryParse(parts[0], out w) && int.TryParse(parts[1], out h))
+                        {
+                            if (w >= 800 && w <= 4000 && h >= 600 && h <= 3000)
+                            {
+                                winW = w;
+                                winH = h;
+                            }
+                        }
+                    }
                 }
+            }
+            catch { }
+            ClampWindowSize();
+        }
+
+        /// <summary>记住的尺寸比屏幕还大（换了小笔记本）就缩到屏幕能放下，别开到屏幕外面。</summary>
+        static void ClampWindowSize()
+        {
+            try
+            {
+                Rectangle area = Screen.PrimaryScreen.WorkingArea;
+                if (winW > area.Width - 24) winW = area.Width - 24;
+                if (winH > area.Height - 24) winH = area.Height - 24;
+                if (winW < 800) winW = Math.Min(800, area.Width - 24);
+                if (winH < 600) winH = Math.Min(600, area.Height - 24);
             }
             catch { }
         }

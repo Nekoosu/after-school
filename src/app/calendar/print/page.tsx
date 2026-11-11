@@ -196,7 +196,8 @@ export default function PrintCalendarPage() {
 
           <div className="print-sheet-foot">
             <div className="print-note">
-              备注：____________________________________________
+              备注
+              <i className="print-note-line" />
             </div>
             <div className="print-dim">打印于 {dstr(new Date())} {new Date().toTimeString().slice(0, 5)}</div>
           </div>

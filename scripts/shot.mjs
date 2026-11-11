@@ -16,6 +16,9 @@ mkdirSync(OUT, { recursive: true });
 // 想拍深色主题：SHOT_DARK=1
 const ONLY = (process.env.SHOT_ONLY || "").split(",").filter(Boolean);
 const DARK = process.env.SHOT_DARK === "1";
+// SHOT_W=375 把所有页强行换成这个宽度（检查窄窗口适配用），SHOT_H 同理
+const FORCE_W = Number(process.env.SHOT_W || 0);
+const FORCE_H = Number(process.env.SHOT_H || 0);
 const pages = [
   { name: "01-today", path: "/", w: 1440, h: 1000 },
   { name: "02-calendar", path: "/calendar", w: 1440, h: 1000 },
@@ -76,7 +79,10 @@ const send = (method, params = {}) =>
 await send("Page.enable");
 
 for (const p of pages.filter((x) => ONLY.length === 0 || ONLY.includes(x.name))) {
-  await send("Emulation.setDeviceMetricsOverride", { width: p.w, height: p.h, deviceScaleFactor: 1, mobile: p.w < 700 });
+  const w = FORCE_W || p.w;
+  const h = FORCE_H || p.h;
+  const name = FORCE_W ? `${p.name}-${w}` : p.name;
+  await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 700 });
   // SHOT_SHARE 可以给完整 URL（演示数据打印出来的就是完整链接），也可以只给路径
   await send("Page.navigate", { url: /^https?:\/\//.test(p.path) ? p.path : BASE + p.path });
   await sleep(2200);
@@ -110,9 +116,9 @@ for (const p of pages.filter((x) => ONLY.length === 0 || ONLY.includes(x.name)))
     console.log("skip", p.name, JSON.stringify(r).slice(0, 120));
     continue;
   }
-  const file = join(OUT, p.name + ".png");
+  const file = join(OUT, name + ".png");
   writeFileSync(file, Buffer.from(data, "base64"));
-  console.log(p.name, p.path, p.w + "x" + p.h);
+  console.log(name, p.path, w + "x" + h);
 }
 
 ws.close();
