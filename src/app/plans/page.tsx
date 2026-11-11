@@ -376,7 +376,9 @@ export default function PlansPage() {
                 </div>
                 <div className="row between" style={{ marginTop: 8 }}>
                   <span className="muted fs-xs">
-                    只是初稿，生成后写进下面的内容，你随便改；不点保存不会进库。
+                    {aiBusy
+                      ? "AI 正在写，接口慢的时候要等一两分钟…"
+                      : "只是初稿，生成后写进下面的内容，你随便改；不点保存不会进库。"}
                   </span>
                   <Btn variant="primary" size="sm" icon="sparkles" loading={aiBusy} onClick={genDraft}>
                     生成初稿

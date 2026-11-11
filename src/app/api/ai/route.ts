@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     if (!base) return fail("先填接口地址");
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20000);
+    const timer = setTimeout(() => controller.abort(), 60000);
     try {
       const res = await fetch(`${base}/chat/completions`, {
         method: "POST",
@@ -31,7 +31,8 @@ export async function POST(req: Request) {
         body: JSON.stringify({
           model,
           messages: [{ role: "user", content: "只回复两个字：可用" }],
-          max_tokens: 16,
+          // 推理型模型会先花 token 思考，给 16 个会出现「接口 200 但正文为空」
+          max_tokens: 300,
           stream: false,
         }),
         signal: controller.signal,
@@ -41,10 +42,24 @@ export async function POST(req: Request) {
         return ok({ ok: false, error: `接口返回 ${res.status}：${text.slice(0, 200)}` });
       }
       let reply = "";
+      let finish = "";
       try {
-        reply = JSON.parse(text).choices?.[0]?.message?.content?.trim() ?? "";
+        const j = JSON.parse(text);
+        reply = j.choices?.[0]?.message?.content?.trim() ?? "";
+        finish = String(j.choices?.[0]?.finish_reason ?? "");
       } catch {
         return ok({ ok: false, error: "返回的不是 JSON，地址一般要以 /v1 结尾" });
+      }
+      if (!reply) {
+        return ok({
+          ok: finish === "length",
+          reply: "",
+          model,
+          error:
+            finish === "length"
+              ? "连上了，但模型把字数全用在思考上（换个不推理的型号，或把字数上限调大）"
+              : "连上了，但模型没给正文",
+        });
       }
       return ok({ ok: true, reply, model });
     } finally {

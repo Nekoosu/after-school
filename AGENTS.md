@@ -493,3 +493,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ui-check.ps1
 - 找不到 Edge 才退回 `OpenBrowser()`；这两个分支都要能跑通，别只测一个。
 
 **smoke15 的坑（写新冒烟时注意）**：测「学生课表」的课必须排在 **−14 天 ~ +35 天** 之间（timetable 接口的窗口），排到 +40 天就会拿到空数组，看着像功能坏了。
+
+## 30. AI 润色接第三方接口的实测结论（1.6.0）
+
+拿一个 OpenAI 兼容的中转站（`https://ai.oaea.cn/v1`）真跑过一轮，结论直接指导了 `src/lib/ai.ts` 的写法：
+
+- **模型列表能列、不等于能用**。当时 `/models` 回 10 个模型，`deepseek-*`、`glm-*`、`kimi-*`、`sensenova-*` 全部 503「上游池没有可用 Key」，只有 `tierflow` / `tierflow_pro` 在线（上游轮转到 DeepSeek-V4.1-Flash 或 Qwen3.8-Flash）。所以设置页的「自动获取」只是把名字拉回来，**哪个能跑必须真的生成一次才知道**；报错信息要原样透给用户看。
+- **慢是常态，不是 bug**：180~260 字的一篇家长反馈，实测 30~120 秒；同一提示词直连 115 秒能成、走 app 时 244 秒撞 504。共享 key 的上游排队，代码救不了，只能把超时放长 + 明确回退。
+- **推理型模型会返回空正文**：Qwen3.8-Flash 先花 token 思考，`max_tokens` 给小（16~300）时 `HTTP 200` 但 `content` 是空字符串，旧代码报「接口没有返回内容」。现在 `chat()` 空正文时把 max_tokens 翻三倍（上限 6000）重试一次；探活固定 `max_tokens: 300`，并读 `finish_reason === "length"` 给出「字数全用在思考上」的提示。
+- `429`（`RateLimitExceeded.EndpointRPMExceeded`）与 `5xx` 各重试一次、间隔 4 秒；默认超时 **180 秒**、默认 maxTokens 1200。**AI 永远是可选润色**：`polishFeedback` 失败只 `console.error` 并回本地草稿，`POST /api/ai` 失败一律 `ok({ok:false,error})`，绝不让设置页/记一笔页崩。
+- 前端要告诉用户在等什么：`wrap` 页按钮旁小字在 `busy && useAi` 时显示「AI 正在写，接口慢的时候要等一两分钟…」，`plans` 页同理。
+
+**血泪教训：不要用 PowerShell 改含中文的源文件。** `(Get-Content -Raw $f) -replace 'a','b' | Set-Content $f -Encoding UTF8` 在 PS 5.1 里按 GBK 读，会把整份 UTF-8 中文变成乱码（`鍙仛銆屾妸璇濊鏄庣櫧`）并吃掉换行，源码直接坏掉——这次坏了三个文件，只能 `git checkout --` 还原。改源码只用 write/edit 工具；`Select-String`/`Get-Content` 只用来读。

@@ -43,7 +43,7 @@ export async function POST(req: Request) {
           { role: "system", content: SYSTEM },
           { role: "user", content: lines.join("\n") },
         ],
-        40000,
+        180000,
         1200,
       );
       return ok({ ok: true, content });

@@ -26,8 +26,17 @@ interface Msg {
   content: string;
 }
 
-/** 调一次 Chat Completions（OpenAI 兼容），超时 25 秒 */
-export async function chat(messages: Msg[], timeoutMs = 25000, maxTokens = 800): Promise<string> {
+interface ChatChoice {
+  message?: { content?: string | null; reasoning_content?: string | null };
+  finish_reason?: string | null;
+}
+
+/** 单次请求：返回正文与结束原因；正文可能是空串（推理型模型把字数全用在思考上） */
+async function once(
+  messages: Msg[],
+  maxTokens: number,
+  timeoutMs: number,
+): Promise<{ text: string; finish: string }> {
   const conf = aiConf();
   if (!conf.enabled) throw new Error("没有开启 AI 润色（设置页里打开）");
   if (!conf.base) throw new Error("没有填接口地址");
@@ -54,15 +63,17 @@ export async function chat(messages: Msg[], timeoutMs = 25000, maxTokens = 800):
     if (!res.ok) {
       throw new Error(`接口返回 ${res.status}：${text.slice(0, 200)}`);
     }
-    let json: { choices?: Array<{ message?: { content?: string } }> };
+    let json: { choices?: ChatChoice[] };
     try {
       json = JSON.parse(text);
     } catch {
       throw new Error("接口返回的不是 JSON，检查地址是否正确（一般以 /v1 结尾）");
     }
-    const out = json.choices?.[0]?.message?.content?.trim() ?? "";
-    if (!out) throw new Error("接口没有返回内容");
-    return out;
+    const choice = json.choices?.[0];
+    return {
+      text: (choice?.message?.content ?? "").trim(),
+      finish: String(choice?.finish_reason ?? ""),
+    };
   } catch (e) {
     if ((e as Error).name === "AbortError") throw new Error("接口超时，先按本地草稿发吧");
     throw e;
@@ -80,6 +91,34 @@ const SYSTEM = `你是课后托管班的老师，正在给家长发一条微信�
 5. 结尾落款用「老师」，不要写机构名。
 只输出这段话本身，不要解释你在做什么。`;
 
+/**
+ * 调一次 Chat Completions（OpenAI 兼容）。超时 180 秒——共享中转站排队时一篇稿子实测要 30~120 秒。
+ * 推理型模型（deepseek-reasoner / qwen3 / tierflow 这类）会先花 token 思考，
+ * max_tokens 给小了会出现「HTTP 200 但 content 是空字符串」，这时把字数翻倍重试一次。
+ */
+export async function chat(messages: Msg[], timeoutMs = 180000, maxTokens = 1200): Promise<string> {
+  // 中转站/共享 key 常常一分钟只给几次机会，429 与 5xx 隔几秒重试一次基本就好了
+  let first: { text: string; finish: string };
+  try {
+    first = await once(messages, maxTokens, timeoutMs);
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (!/接口返回 (429|5\d\d)/.test(msg)) throw e;
+    await new Promise((r) => setTimeout(r, 4000));
+    first = await once(messages, maxTokens, timeoutMs);
+  }
+  if (first.text) return first.text;
+
+  const bigger = Math.min(Math.max(maxTokens * 3, 2400), 6000);
+  const second = await once(messages, bigger, timeoutMs);
+  if (second.text) return second.text;
+
+  if (second.finish === "length" || first.finish === "length") {
+    throw new Error("模型的字数全用在思考上了，没留下正文（换个不推理的型号）");
+  }
+  throw new Error("接口没有返回内容");
+}
+
 /** 把本地规则草稿润色成能给家长发的话；失败返回 null（调用方回退原草稿） */
 export async function polishFeedback(
   draft: string,
@@ -96,7 +135,8 @@ export async function polishFeedback(
       },
     ]);
     return { text, model: conf.model };
-  } catch {
+  } catch (e) {
+    console.error("[ai] polishFeedback failed:", (e as Error).message);
     return null;
   }
 }

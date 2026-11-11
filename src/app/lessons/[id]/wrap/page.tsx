@@ -317,7 +317,9 @@ export default function WrapPage() {
                         生成这段
                       </Btn>
                       <span className="muted fs-sm self-center">
-                        上课内容会自动带上，不用重复说
+                        {busy[s.student_id] && useAi
+                          ? "AI 正在写，接口慢的时候要等一两分钟…"
+                          : "上课内容会自动带上，不用重复说"}
                       </span>
                     </div>
                   </>

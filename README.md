@@ -132,6 +132,15 @@ curl http://127.0.0.1:3210/api/v1/summary -H "Authorization: Bearer as_xxx"
 
 `/api/v1/summary`、`/api/v1/students`、`/api/v1/students/{id}`、`/api/v1/lessons`、`/api/v1/notes`（只读为主，可建学生、写学情）；`/api/health` 与 `/api/version` 不需要令牌。软件内 `/docs` 有完整文档和 JS/Python 示例。
 
+## AI 润色实测（1.6.0）
+
+对 OpenAI 兼容接口实测过（以共享中转站 `ai.oaea.cn` 为例）：
+
+- 「自动获取」能列出模型并回填；生成前会先探活，失败时明确报错。
+- 共享接口排队时**一篇文章 30~120 秒很正常**，个别时候上游直接 504；按钮转圈就是在等，失败会**自动退回本地草稿**，已经写的内容不受影响。
+- 推理型模型 `max_tokens` 给小了会返回空正文，程序会自动加大字数重试一次。
+- 实测可用与否取决于接口方：当时只有 `tierflow` / `tierflow_pro` 两个模型在线，其余模型池 503。哪个能用以点「自动获取」后实际生成为准。
+
 ## 开发约定
 
 见 [AGENTS.md](AGENTS.md)：一文件一职责、能不加表就不加、重复逻辑进 `src/lib/`、每批改动跑 `tsc --noEmit` + `next build` + 冒烟 + 点击检查。
