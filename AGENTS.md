@@ -478,6 +478,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ui-check.ps1
 - 冲突检查现在分两种：`findStudentConflicts()` 与 `findTeacherConflicts()`，`findConflicts()` 合并返回，`ConflictRow.kind` 是 `"student" | "teacher"`。**老师不能同时出现在两个教室**，前端黄条文案按 `kind` 说「老师 X」还是「学生 Y」。
 - 删老师有讲究：**上过课的老师只软停用**（`status='inactive'`，历史课还要显示名字），一节都没上过的才真删（先把 `course.teacher_id` 置 null）。DELETE 返回 `{ok, soft: boolean, lessons?: n}`。前端卡片 `.teacher-card.off` 降透明度，列表默认还在。
 - 老师页统计（本周节数/课时/学生数）是**当场聚合**，不进统计表；`weekRange()` 用 `toDateStr` 算本周一~周日，别用 `new Date().toISOString()`（UTC 会错一天）。
+- **涉及「这节课的老师是谁」，一律写 `coalesce(l.teacher_id, c.teacher_id) as teacher_id`**（`E:\after-school\src\app\api\lessons\route.ts`、`lessons\[id]\route.ts`、`teachers\route.ts`、`teachers\[id]\route.ts`、`src\lib\conflicts.ts` 的 `findTeacherConflicts` 已统一）。原因：早期排的课只挂了课程上的老师、`lesson.teacher_id` 是 null，只看 `l.teacher_id` 会让这些课从「老师视角课表」「本周节数」「老师冲突」里整段消失。学生数同理取 `lesson_student` 里的 distinct 学生（别用 `enrollment`，那是班级报名表，一对一的学生根本不在里面）。
 
 **课消单价（`src/lib/pricing.ts` 的 `resolvePrice()`）**：四级顺序 ① 这节课填的 `price_per_hour` → ② 该生这门课最近一次 `purchase` 流水的单价 → ③ 任何学生这门课最近一次 `purchase` 的单价 → ④ `course.price_per_lesson` 按 `default_minutes` 折成每小时。一个都取不到就只扣课时、不记金额。
 - 单价恒为「元/小时」，金额 `= round2(unitPrice * billedMinutes / 60)`，全部四舍五入到分（`round2`）。

@@ -14,13 +14,14 @@ export async function GET(req: Request) {
     const from = url.searchParams.get("from") || "0000-01-01";
     const to = url.searchParams.get("to") || "9999-12-31";
     const rows = all<LessonWithStudents>(
-      `select l.*, c.name as course_name, c.color as course_color, t.name as teacher_name,
+      `select l.*, coalesce(l.teacher_id, c.teacher_id) as teacher_id,
+        c.name as course_name, c.color as course_color, t.name as teacher_name,
         (select group_concat(s.name, '、') from lesson_student ls join student s on s.id = ls.student_id
           where ls.lesson_id = l.id) as student_names,
         (select group_concat(ls.student_id, ',') from lesson_student ls
           where ls.lesson_id = l.id) as student_ids
        from lesson l join course c on c.id = l.course_id
-       left join teacher t on t.id = l.teacher_id
+       left join teacher t on t.id = coalesce(l.teacher_id, c.teacher_id)
        where l.start_at >= ? and l.start_at <= ?
        order by l.start_at asc`,
       [from, to],

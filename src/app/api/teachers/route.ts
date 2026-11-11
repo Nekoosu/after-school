@@ -18,18 +18,21 @@ function weekRange(): { from: string; to: string } {
 export async function GET() {
   try {
     const { from, to } = weekRange();
+    // 课可能没写 teacher_id（早期排的、或直接挂在课程上），一律 coalesce 回课程的老师
+    const own = "coalesce(l.teacher_id, c3.teacher_id) = t.id and l.status <> 'cancelled'";
     const rows = all<TeacherWithStats>(
       `select t.*,
         (select group_concat(c.name, '、') from course c where c.teacher_id = t.id) as course_names,
-        (select count(distinct e.student_id) from enrollment e
-           join course c2 on c2.id = e.course_id
-          where c2.teacher_id = t.id and e.status = 'active') as student_count,
+        (select count(distinct ls.student_id) from lesson l
+           join lesson_student ls on ls.lesson_id = l.id
+           join course c3 on c3.id = l.course_id
+          where ${own}) as student_count,
         (select count(*) from lesson l
-          where l.teacher_id = t.id and l.status <> 'cancelled'
-            and l.start_at >= ? and l.start_at < ?) as week_lessons,
+           join course c3 on c3.id = l.course_id
+          where ${own} and l.start_at >= ? and l.start_at < ?) as week_lessons,
         (select coalesce(sum(l.minutes), 0) from lesson l
-          where l.teacher_id = t.id and l.status <> 'cancelled'
-            and l.start_at >= ? and l.start_at < ?) as week_minutes
+           join course c3 on c3.id = l.course_id
+          where ${own} and l.start_at >= ? and l.start_at < ?) as week_minutes
        from teacher t
        order by (t.status = 'active') desc, t.name asc`,
       [from, to, from, to],

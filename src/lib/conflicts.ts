@@ -84,14 +84,15 @@ export function findTeacherConflicts(
     minutes: number;
     title: string;
   }>(
-    `select l.id as lesson_id, l.teacher_id, t.name as teacher_name, l.start_at, l.minutes,
+    `select l.id as lesson_id, coalesce(l.teacher_id, c.teacher_id) as teacher_id,
+            t.name as teacher_name, l.start_at, l.minutes,
             coalesce(l.title, c.name) as title
      from lesson l
      join course c on c.id = l.course_id
-     join teacher t on t.id = l.teacher_id
+     join teacher t on t.id = coalesce(l.teacher_id, c.teacher_id)
      where l.status <> 'cancelled'
        and l.id <> ?
-       and l.teacher_id = ?
+       and coalesce(l.teacher_id, c.teacher_id) = ?
        and l.start_at >= ? and l.start_at <= ?`,
     [excludeLessonId, teacherId, from, to],
   );

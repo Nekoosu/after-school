@@ -13,9 +13,10 @@ export async function GET(_req: Request, ctx: Ctx) {
   try {
     const id = Number((await ctx.params).id);
     const lesson = get<LessonRow & { course_name: string; teacher_name: string | null }>(
-      `select l.*, c.name as course_name, t.name as teacher_name
+      `select l.*, coalesce(l.teacher_id, c.teacher_id) as teacher_id,
+              c.name as course_name, t.name as teacher_name
          from lesson l join course c on c.id = l.course_id
-         left join teacher t on t.id = l.teacher_id
+         left join teacher t on t.id = coalesce(l.teacher_id, c.teacher_id)
         where l.id = ?`,
       [id],
     );

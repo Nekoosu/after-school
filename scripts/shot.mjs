@@ -23,6 +23,7 @@ const pages = [
   { name: "08-monthly", path: "/monthly", w: 1440, h: 1000 },
   { name: "09-backups", path: "/settings", w: 1280, h: 760, scroll: 1120 },
   { name: "10-manual", path: "/manual", w: 1440, h: 1000 },
+  { name: "11-teachers", path: "/teachers", w: 1440, h: 1000 },
   { name: "11-manual-mobile", path: "/manual", w: 520, h: 900 },
   // 侧边栏收起的样子：先写 localStorage 再重载，拍出来才是「记忆过的」状态
   { name: "12-collapsed", path: "/calendar", w: 1440, h: 900, collapse: true },

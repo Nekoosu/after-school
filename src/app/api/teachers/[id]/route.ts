@@ -21,8 +21,8 @@ export async function GET(_req: Request, ctx: Ctx) {
           where ls.lesson_id = l.id) as student_ids
        from lesson l
        join course c on c.id = l.course_id
-       left join teacher t on t.id = l.teacher_id
-       where l.teacher_id = ? and l.start_at >= date('now','localtime','-7 day')
+       left join teacher t on t.id = coalesce(l.teacher_id, c.teacher_id)
+       where coalesce(l.teacher_id, c.teacher_id) = ? and l.start_at >= date('now','localtime','-7 day')
        order by l.start_at asc
        limit 60`,
       [id],
