@@ -66,6 +66,13 @@ export default function SettingsPage() {
   const [bk, setBk] = useState<{ dir: string; files: BackupFile[]; total: number } | null>(null);
   const [bkBusy, setBkBusy] = useState(false);
   const [diag, setDiag] = useState<DiagResult | null>(null);
+  const [update, setUpdate] = useState<{
+    ok: boolean;
+    latest?: string | null;
+    hasUpdate?: boolean;
+    url?: string;
+    error?: string;
+  } | null>(null);
   const [restoreFile, setRestoreFile] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [delFile, setDelFile] = useState<string | null>(null);
@@ -115,6 +122,11 @@ export default function SettingsPage() {
     api<DiagResult>("/api/diagnostics")
       .then(setDiag)
       .catch(() => setDiag(null));
+    // 查新版本：查不到就当没有这回事，页面照常用
+    fetch("/api/update")
+      .then((r) => r.json())
+      .then(setUpdate)
+      .catch(() => setUpdate(null));
   }, [toast, loadBackups]);
 
   async function backupNow() {
@@ -606,6 +618,24 @@ export default function SettingsPage() {
                     <span className="mono fs-sm">
                       {APP_VERSION}（接口 v{API_VERSION}）
                     </span>
+                  </div>
+                  <div className="row between">
+                    <span className="muted">新版本</span>
+                    {update?.ok && update.hasUpdate ? (
+                      <a
+                        className="btn btn-sm btn-primary"
+                        href={update.url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        有 {update.latest} 可用
+                        <Icon name="external" size={13} />
+                      </a>
+                    ) : (
+                      <span className="fs-sm muted">
+                        {update?.ok ? "已是最新" : "没查到（可能没联网）"}
+                      </span>
+                    )}
                   </div>
                   <div className="row between">
                     <span className="muted">数据文件</span>

@@ -33,6 +33,7 @@
 | **备份** | 每天自动备份 + 手动备份，每份可恢复 / 下载 / 删除 |
 | **对接** | 令牌保护的 `/api/v1/*` 只读接口 + 接口文档页，给别的程序或 AI 用 |
 | **使用说明** | 内置 21 章操作手册，能打印也能存 PDF |
+| **省心的小东西** | 顶栏 ＋ 快速新建（排课/记一笔/收钱/加学生）、主题三态（浅色/深色/**跟随系统**）、`?` 快捷键说明、设置页**数据体检**（查漏记、重名、没挂老师的课）、**查新版本**、今日页一键复制催费话术、窄窗口自动两列课表 + 表格横滚、打印永远黑字白底 |
 
 <table>
 <tr>
@@ -49,7 +50,7 @@
 
 **下载**：[最新版本](https://github.com/Nekoosu/after-school/releases/latest)
 
-- Windows：拿 `after-school-<版本号>.zip`（例如 `after-school-1.5.0.zip`）
+- Windows：拿 `after-school-<版本号>.zip`（例如 `after-school-1.7.0.zip`）
 
 **Windows**
 
@@ -68,7 +69,7 @@ pnpm dev          # http://localhost:3000
 
 ```bash
 pnpm build
-pnpm test         # 40 个单元测试
+pnpm test         # 43 个单元测试
 ```
 
 打包成免安装桌面版：
@@ -85,19 +86,19 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\package.ps1
-Compress-Archive -Path dist\* -DestinationPath release\windows\after-school-1.5.0.zip
+Compress-Archive -Path dist\* -DestinationPath release\windows\after-school-1.7.0.zip
 ```
 
-然后传到 GitHub Releases，tag 用 `v1.5.0`、文件名按 `项目名-版本号.zip`：
-Windows 是 `after-school-1.5.0.zip`。
+然后传到 GitHub Releases，tag 用 `v1.7.0`、文件名按 `项目名-版本号.zip`：
+Windows 是 `after-school-1.7.0.zip`。
 以后每个版本都按这套命名，下载链接永远指向 [releases/latest](https://github.com/Nekoosu/after-school/releases/latest)。
 
 ## 技术栈
 
 - **Next.js 15** App Router + **React 19**，页面全部客户端渲染，接口全部 `force-dynamic`
 - **SQLite**（better-sqlite3），14 张表 + 2 个视图，课时用流水账（`hours_ledger`），余额永远是 `SUM(delta_minutes)`；`synchronous=FULL`，断电或强杀都不丢已提交的数据
-- **手写 CSS** 设计系统（约 4260 行，27 个分区），无 UI 库、无 Tailwind、无 ORM
-- 51 个接口、20 个页面、43 个单元测试、432 项接口冒烟、101 项真实浏览器点击检查
+- **手写 CSS** 设计系统（约 4690 行，30 个分区），无 UI 库、无 Tailwind、无 ORM
+- 51 个接口、20 个页面、43 个单元测试、434 项接口冒烟、114 项真实浏览器点击检查
 
 ## 目录
 

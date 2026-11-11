@@ -553,3 +553,34 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 ```
 
 截图脚本也扩了：`scripts\shot.mjs` 认环境变量 `SHOT_ONLY=01-today,02-calendar`（只拍这几页）和 `SHOT_DARK=1`（写 `localStorage["as-theme"]="dark"` 再重载，拍完会自动改回 light，免得污染下一次）。
+
+## 33. 三轮打磨（1.7.0）：顶栏新建、数据体检、窄窗、主题三态、快捷键、查新版本
+
+三轮都围绕用户的「像不像一个软件」和「适配性」：第 1 轮补常用操作入口，第 2 轮修窄窗口与打印，第 3 轮补说明与自我检查。
+
+**第 1 轮——少点两步**
+- 顶栏 `.topbar-new` 里挂 `Menu`（`src/components/AppShell.tsx`），四项：排一节课 `/calendar?new=1`、去记一笔 `/calendar`、收一笔钱 `/finance?new=1`、加一个学生 `/students?new=1`。手机 FAB 用的是硬跳 `window.location.href`——**别改成 `<Link>`**，软跳不会重挂载，`?new=1` 就不生效。`<=900px` 只留「＋」、`<=620px` 整块隐藏（手机有 FAB）。
+- `GET /api/diagnostics`（`src/app/api/diagnostics/route.ts`）查五类：课时扣成负数（`v_student_balance`）、未来的课没挂老师（`coalesce(l.teacher_id, c.teacher_id)` 为空）、在读学生重名、`minutes<=0` 的课、未来的课没有学生。每项 `{key,label,hint,href,count,samples[]}`，设置页「数据体检」卡逐条列 + 「去看看」直达。**是提醒不是拦截。**
+- 今日页「课时不足」右侧加「复制催费话术」，`copyNotice()` 拼一段可以直接粘给家长的话（`src/lib/client.ts` 的 `copyText`）。
+- `launcher/Launcher.cs`：`data\window.txt` 记 `1320x900` 这样的窗口尺寸，`WatchWindowSize()` 每 1.2 秒量一次 Edge 窗口（`EnumWindows` + `appWindow.Id`），关窗前 `SaveWindowSize()`；`SetProcessDpiAwareness(2)` 让高分屏不糊。**注意 `Timer` 要写全 `System.Windows.Forms.Timer`，否则 CS0104 二义。**
+
+**第 2 轮——小屏幕和纸**
+- `globals.css` 末尾「窄窗口适配（1.7.0）」：`<=980px` 时 `.table-wrap > .table{min-width:660px}`、`.table.wide{min-width:900px}`（宽表格改成横向滚动，别把「张小夏」挤成一字一行）、`.week-grid` 两列；`<=620px` 课表一列、`.page-head` 改纵向、页头按钮 `flex:1` 铺满。
+- 打印：`@media print` 里把整批 token 强制成浅色（`:root, :root[data-theme="dark"]` 都覆盖），`@page { margin: 12mm 10mm }`。**验证办法：深浅两次截图比 SHA256，一样就说明打印不受主题影响。**
+- 打印页脚「备注」原来用 44 个下划线，会把打印时间顶出纸边——改成 `.print-note` + `.print-note-line`（`flex:1 1 auto` + `border-bottom: 1px solid var(--line)`）。
+- `Launcher.cs` 的 `ClampWindowSize()`：按 `Screen.PrimaryScreen.WorkingArea` 收一下，换小笔记本后窗口不会开到屏幕外。
+
+**第 3 轮——说明与自我检查**
+- 主题三态：`as-theme` 只存 `light`/`dark`，「跟随系统」= 删掉这个键 + 听 `matchMedia("(prefers-color-scheme: dark)")`。`src/app/layout.tsx` 的 `themeBoot` 必须把非 `light|dark` 的值按系统偏好归一，否则会写出 `data-theme="system"`（= 浅色）。
+- `?` 叫出快捷键说明面板（`SHORTCUTS` + `<Modal>` + `.kbd-help/.kbd-row/.kbd-keys`），在输入框里不拦；`Ctrl+K` 搜索、`Ctrl+B` 收侧栏、`Esc` 关弹窗。
+- `document.title` 跟着路由走：`${titleOf(pathname)} · 课后服务管理`。
+- `GET /api/update`：拿 `releases/latest`，`AbortController` 5 秒超时，**任何失败都 `200 {ok:false,error}`**，设置页「关于」里显示「有 x.y.z 可用 / 已是最新 / 没查到」。
+
+**这一轮踩的坑**
+1. `git push` 挂代理（7899）会报 `schannel: failed to receive handshake`，同一时刻 `curl -x` 却是 200。**先直连 `git push origin main`，不行再挂代理。**
+2. `git add -A` 把 `.edge-print/`（Edge 的临时 profile，几百个文件）提交进去了，只能 `git rm -r --cached` + `commit --amend` + `force push`。**截图/打包产物目录先确认在 `.gitignore` 里：`.edge-*`、`.shots`、`dist`、`release`。**
+3. `edit`/`write` 改 `launcher/使用说明.txt` 会把 UTF-8 BOM 弄丢（首字节变 `E8 AF BE`），打包后记事本打开是乱码。改完必须补：`[System.IO.File]::WriteAllText($p, $t, [System.Text.UTF8Encoding]::new($true))`。
+4. `scripts/*.mjs` 是纯 JS，写 `let x: {a?: boolean} = {}` 会直接语法错——TS 类型只写在 `src/` 里。
+5. 用 `waitFor(document.body.innerText.includes("跟家长说一句"))` 等收尾页会**永远立刻通过**：顶栏面包屑本来就叫这个名。要等页面自己的东西，比如 `!!document.querySelector("textarea.textarea")`。
+6. 服务端返回的 HTML 里没有 client 组件的真实内容（只有骨架），**页面白不白、有没有内容，只能用 `scripts\cdp-err.mjs <url>` 真开浏览器看**。
+7. 界面验证基线（1.7.0）：**434 项接口冒烟 / 114 项点击检查 / 43 个单元测试**；`scripts\shot.mjs` 现在支持 `SHOT_W`/`SHOT_H`（如 `SHOT_W=375 SHOT_H=812`，文件名自动带宽度），`scripts\shot-print.mjs` 用 `Emulation.setEmulatedMedia({media:"print"})` + A4 视口拍打印效果。

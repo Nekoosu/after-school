@@ -130,6 +130,17 @@ const ics2 = await req(`/api/calendar.ics?from=${weekFrom}&to=${nextTo}`);
 const events2 = (ics2.text.match(/BEGIN:VEVENT/g) ?? []).length;
 ok("停课的节不导出", events2 === 1, String(events2));
 
+// 查新版本：没网也要 200 + ok:false，不许 500
+const upd = await req("/api/update");
+ok("/api/update 永远 200", upd.res.status === 200, String(upd.res.status));
+let updJson = {};
+try {
+  updJson = JSON.parse(upd.text);
+} catch {
+  updJson = {};
+}
+ok("/api/update 给出 ok 字段", typeof updJson.ok === "boolean", upd.text.slice(0, 160));
+
 // 清理
 await del(`/api/lessons/${copied?.id}`);
 await del(`/api/lessons/${l1}`);

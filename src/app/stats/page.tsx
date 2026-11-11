@@ -130,7 +130,11 @@ export default function StatsPage() {
           <Card>
             <div className="card-body">
               {s.revenueByMonth.length === 0 ? (
-                <Empty icon="wallet" title="没有收款记录" />
+                <Empty
+                  icon="wallet"
+                  title="没有收款记录"
+                  text="家长交钱后点「记一笔收款」，这里按月汇总"
+                />
               ) : (
                 <div className="bars">
                   {s.revenueByMonth.map((m) => (
@@ -152,7 +156,11 @@ export default function StatsPage() {
           <Card>
             <div className="card-body">
               {s.monthly.length === 0 ? (
-                <Empty icon="calendar" title="还没有上完的课" />
+                <Empty
+                  icon="calendar"
+                  title="还没有上完的课"
+                  text="下课点「记完了」，这里按月长柱子"
+                />
               ) : (
                 <div className="bars">
                   {s.monthly.map((m) => (
@@ -178,7 +186,11 @@ export default function StatsPage() {
         <Card>
           <div className="card-body">
             {!heatCells ? (
-              <Empty icon="calendar" title="没有数据" />
+              <Empty
+                icon="calendar"
+                title="没有数据"
+                text="上过课之后，这里会亮成一片格子"
+              />
             ) : (
               <>
                 <div className="heat">
@@ -224,7 +236,11 @@ export default function StatsPage() {
           <Card>
             <div className="card-body">
               {s.courseShare.length === 0 ? (
-                <Empty icon="book" title="还没有上完的课" />
+                <Empty
+                  icon="book"
+                  title="还没有上完的课"
+                  text="上完一节，这里就看得出哪门课占的时间多"
+                />
               ) : (
                 <div className="col" style={{ gap: 12 }}>
                   {s.courseShare.map((c) => (
@@ -272,7 +288,11 @@ export default function StatsPage() {
       <Section title="上课最多的学生" count={s.topStudents.length} mt>
         <Card>
           {s.topStudents.length === 0 ? (
-            <Empty icon="users" title="还没有数据" />
+            <Empty
+              icon="users"
+              title="还没有数据"
+              text="记完一节课，这里就按上课次数排出来"
+            />
           ) : (
             <div className="table-wrap">
               <table className="table compact">

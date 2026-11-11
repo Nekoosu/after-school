@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
-import { Menu, MenuItem } from "./ui";
+import { Menu, MenuItem, Modal } from "./ui";
 import { SearchPalette } from "./SearchPalette";
 import { cn } from "@/lib/format";
 import { AUTHOR_NAME, AUTHOR_URL } from "@/lib/author";
@@ -21,6 +21,22 @@ interface NavGroup {
   label: string;
   links: NavLink[];
 }
+
+type ThemePref = "light" | "dark" | "system";
+
+const THEME_LABEL: Record<ThemePref, string> = {
+  light: "浅色",
+  dark: "深色",
+  system: "跟随系统",
+};
+
+const SHORTCUTS: Array<{ keys: string; what: string }> = [
+  { keys: "Ctrl+K", what: "全局搜索：学生、课程、教案、上课记录" },
+  { keys: "Ctrl+B", what: "收起 / 展开左侧导航" },
+  { keys: "?", what: "打开这份快捷键说明" },
+  { keys: "Esc", what: "关掉弹窗、菜单、搜索面板" },
+  { keys: "Enter", what: "在搜索框里打开第一条结果" },
+];
 
 const GROUPS: NavGroup[] = [
   {
@@ -133,12 +149,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState(0);
   const [low, setLow] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [themePref, setThemePref] = useState<"light" | "dark" | "system">("system");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [themeReady, setThemeReady] = useState(false);
 
   useEffect(() => {
     setNavOpen(false);
     setSearchOpen(false);
+    setHelpOpen(false);
+    // 标题跟着页面走：浏览器标签、任务栏、任务视图里都能认出是哪一页
+    document.title = `${titleOf(pathname)} · 课后服务管理`;
   }, [pathname]);
 
   // 侧边栏收/展：读本地记住的状态 + 跟着窗口宽度判断「现在是不是手机布局」
@@ -178,22 +199,51 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // 主题：先看本地存的，没存过就跟系统走
+  // 「?」叫出快捷键说明（在输入框里打字时不拦）
   useEffect(() => {
-    const saved = localStorage.getItem("as-theme");
-    const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-    const initial: "light" | "dark" = saved === "dark" || saved === "light" ? saved : dark ? "dark" : "light";
-    document.documentElement.dataset.theme = initial;
-    setTheme(initial);
-    setThemeReady(true);
-    setDateLabel(todayLabel());
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "?" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select" || el?.isContentEditable) return;
+      e.preventDefault();
+      setHelpOpen((v) => !v);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  function toggleTheme() {
-    const next = theme === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = next;
-    localStorage.setItem("as-theme", next);
-    setTheme(next);
+  // 主题：浅色 / 深色 / 跟随系统（没选过就跟系统走，系统切了也跟着切）
+  useEffect(() => {
+    const saved = localStorage.getItem("as-theme");
+    const pref: ThemePref = saved === "light" || saved === "dark" ? saved : "system";
+    const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+    applyTheme(pref, dark);
+    setThemeReady(true);
+    setDateLabel(todayLabel());
+
+    const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+    const onSystemChange = () => {
+      const now = localStorage.getItem("as-theme");
+      if (now !== "light" && now !== "dark") {
+        applyTheme("system", window.matchMedia("(prefers-color-scheme: dark)").matches);
+      }
+    };
+    mq?.addEventListener?.("change", onSystemChange);
+    return () => mq?.removeEventListener?.("change", onSystemChange);
+  }, []);
+
+  function applyTheme(pref: ThemePref, systemDark: boolean) {
+    const resolved: "light" | "dark" = pref === "system" ? (systemDark ? "dark" : "light") : pref;
+    document.documentElement.dataset.theme = resolved;
+    setTheme(resolved);
+    setThemePref(pref);
+    if (pref === "system") localStorage.removeItem("as-theme");
+    else localStorage.setItem("as-theme", pref);
+  }
+
+  function pickTheme(pref: ThemePref) {
+    applyTheme(pref, window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
   }
 
   // ⌘K / Ctrl+K 打开搜索
@@ -404,13 +454,57 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
             <button
               className="btn btn-icon btn-ghost"
-              onClick={toggleTheme}
-              aria-label={theme === "dark" ? "切换到浅色" : "切换到深色"}
-              title={theme === "dark" ? "切换到浅色" : "切换到深色"}
-              style={{ opacity: themeReady ? 1 : 0 }}
+              onClick={() => setHelpOpen(true)}
+              aria-label="快捷键说明"
+              title="快捷键说明（按 ? 打开）"
             >
-              <Icon name={theme === "dark" ? "sun" : "moon"} size={17} />
+              <Icon name="info" size={17} />
             </button>
+            <Menu
+              align="right"
+              trigger={
+                <button
+                  className="btn btn-icon btn-ghost topbar-theme-btn"
+                  aria-label="主题"
+                  title={"主题：" + THEME_LABEL[themePref]}
+                  style={{ opacity: themeReady ? 1 : 0 }}
+                >
+                  <Icon name={theme === "dark" ? "sun" : "moon"} size={17} />
+                </button>
+              }
+            >
+              {(close) => (
+                <>
+                  <MenuItem
+                    icon="sun"
+                    onClick={() => {
+                      pickTheme("light");
+                      close();
+                    }}
+                  >
+                    浅色
+                  </MenuItem>
+                  <MenuItem
+                    icon="moon"
+                    onClick={() => {
+                      pickTheme("dark");
+                      close();
+                    }}
+                  >
+                    深色
+                  </MenuItem>
+                  <MenuItem
+                    icon="zap"
+                    onClick={() => {
+                      pickTheme("system");
+                      close();
+                    }}
+                  >
+                    跟随系统
+                  </MenuItem>
+                </>
+              )}
+            </Menu>
             <span className="topbar-date">{dateLabel}</span>
           </div>
         </header>
@@ -423,6 +517,26 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
 
       <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
+
+      <Modal open={helpOpen} onClose={() => setHelpOpen(false)} title="快捷键与常用操作">
+        <div className="kbd-help">
+          {SHORTCUTS.map((s) => (
+            <div className="kbd-row" key={s.keys + s.what}>
+              <span className="kbd-keys">
+                {s.keys.split("+").map((k) => (
+                  <kbd className="kbd" key={k}>
+                    {k.trim()}
+                  </kbd>
+                ))}
+              </span>
+              <span className="kbd-what">{s.what}</span>
+            </div>
+          ))}
+        </div>
+        <p className="kbd-foot">
+          点开顶栏的「＋」能直接排一节课、记一笔、收一笔钱；手机上这个入口在右下角的圆按钮。
+        </p>
+      </Modal>
 
       {action ? (
         // 用硬跳转而不是 <Link>：`?new=1` 是靠页面加载时读 search 打开的，

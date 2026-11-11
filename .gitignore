@@ -2,10 +2,8 @@ node_modules/
 .next/
 dist/
 .shots/
-.edge-shot/
-.edge-print/
-.edge-eval/
-.edge-ui/
+.edge-*/
+.build/
 .probe.js
 data/*.db
 data/*.db-wal

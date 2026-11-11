@@ -4623,3 +4623,65 @@ html { scroll-behavior: smooth; }
     white-space: nowrap;
   }
 }
+
+/* ============================================================
+   30. 快捷键说明与主题三态（1.7.0）
+   ============================================================ */
+.kbd-help {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kbd-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 10px;
+  border-radius: var(--r-sm);
+  border-bottom: 1px solid var(--line-3);
+}
+
+.kbd-row:last-child {
+  border-bottom: 0;
+}
+
+.kbd-row:hover {
+  background: var(--surface-2);
+}
+
+.kbd-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 118px;
+}
+
+.kbd-keys .kbd {
+  font-size: 11.5px;
+  padding: 2px 7px;
+  background: var(--surface-3);
+  color: var(--ink-2);
+}
+
+.kbd-what {
+  font-size: 13.5px;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+.kbd-foot {
+  margin: 14px 2px 0;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  line-height: 1.6;
+}
+
+@media (max-width: 620px) {
+  .kbd-keys {
+    flex: 0 0 92px;
+  }
+  .kbd-what {
+    font-size: 13px;
+  }
+}

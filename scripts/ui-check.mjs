@@ -226,7 +226,10 @@ async function main() {
     await evalJS(clickText("记完了"));
     const jumped = await waitFor(`location.pathname.endsWith("/wrap")`, 10000);
     ok("记完自动跳到收尾页", jumped === true, await evalJS("return location.pathname;"));
-    await waitFor(`document.body.innerText.includes("跟家长说一句")`);
+    // 顶栏面包屑里也有「跟家长说一句」，等它出现等于没等；
+    // 要等收尾页自己渲染出输入框，否则会抢跑读到空白页（曾经因此误报）。
+    const wrapReady = await waitFor(`!!document.querySelector("textarea.textarea")`, 15000);
+    ok("收尾页渲染出「他今天怎么样」输入框", wrapReady === true);
 
     console.log("\n[4] 收尾页生成草稿");
     const wrapText = await evalJS(bodyText);
@@ -626,7 +629,47 @@ async function main() {
     await send("Emulation.clearDeviceMetricsOverride");
     await sleep(400);
 
-    console.log("\n[23] 控制台错误");
+    console.log("\n[23] 主题三态与快捷键说明");
+    await goto("/", "");
+    await sleep(600);
+    await evalJS(`return (() => { document.querySelector(".topbar-theme-btn").click(); return true; })();`);
+    await sleep(350);
+    const themeTexts = String(
+      await evalJS(
+        `return Array.from(document.querySelectorAll(".topbar-actions .menu .menu-item")).map((e) => e.textContent.trim()).join("|");`,
+      ),
+    );
+    ok(
+      "主题菜单有浅色 / 深色 / 跟随系统",
+      themeTexts.includes("浅色") && themeTexts.includes("深色") && themeTexts.includes("跟随系统"),
+      themeTexts,
+    );
+    await evalJS(`return (() => { document.body.click(); return true; })();`);
+    await sleep(250);
+    await evalJS(`return (() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true }));
+      return true;
+    })();`);
+    await sleep(450);
+    const helpRows = Number(await evalJS(`return document.querySelectorAll(".modal .kbd-row").length;`));
+    ok("按 ? 能叫出快捷键说明", helpRows >= 5, `kbd-row = ${helpRows}`);
+    await evalJS(`return (() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      return true;
+    })();`);
+    await sleep(350);
+
+    await goto("/settings", "");
+    await sleep(1200);
+    const aboutText = String(await evalJS(`return document.body.innerText;`));
+    const hasUpdateRow =
+      aboutText.includes("新版本") &&
+      (aboutText.includes("已是最新") ||
+        aboutText.includes("没查到") ||
+        /有 \d+\.\d+\.\d+ 可用/.test(aboutText));
+    ok("设置页「关于」里有新版本一栏", hasUpdateRow, hasUpdateRow ? "ok" : "缺少新版本一栏");
+
+    console.log("\n[24] 控制台错误");
     const real = errors.filter((e) => e && !/favicon|Failed to load resource: the server responded with a status of 404/i.test(e));
     ok("页面没有脚本报错", real.length === 0, real.slice(0, 3).join(" | "));
   } finally {
