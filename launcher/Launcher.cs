@@ -40,6 +40,8 @@ namespace AfterSchool
         static volatile int winH = 900;
         static volatile int winX = int.MinValue;
         static volatile int winY = int.MinValue;
+        // 上次是不是最大化着关的：window.txt 前面加个 M 记着，回来还是最大化
+        static volatile bool winMax;
 
         // 单实例：第二次双击 exe 不再开一个窗口，而是把已经在跑的那个叫到前面来
         static Mutex shellMutex;
@@ -196,9 +198,7 @@ namespace AfterSchool
                 {
                     bool quit = args.Length > 0 && args[0] == "--quit";
                     if (ActivateExisting(quit)) return;
-                    MessageBox.Show("课后服务管理已经在运行了，窗口可能还藏在右下角的托盘里：\n" +
-                        "点一下托盘上的「课」图标就能回来。",
-                        "课后服务管理", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    // 没叫回来（极少见，多半是对方还在启动）就静默退出，别拿弹窗打断人
                     return;
                 }
 
@@ -250,7 +250,7 @@ namespace AfterSchool
             return Join(dataDir, "window.txt");
         }
 
-        /// <summary>上次窗口多大、在哪儿，这次还这样（存成 1320x900+120+60 这种）。</summary>
+        /// <summary>上次窗口多大、在哪儿，这次还这样（存成 1320x900+120+60 这种；最大化在开头记个 M）。</summary>
         static void LoadWindowSize()
         {
             try
@@ -258,6 +258,11 @@ namespace AfterSchool
                 if (File.Exists(WindowFile()))
                 {
                     string s = File.ReadAllText(WindowFile()).Trim();
+                    if (s.StartsWith("M"))
+                    {
+                        winMax = true;
+                        s = s.Substring(1);
+                    }
                     int plus = s.IndexOf('+');
                     string sizePart = plus >= 0 ? s.Substring(0, plus) : s;
                     string[] parts = sizePart.Split('x');
@@ -312,7 +317,7 @@ namespace AfterSchool
         {
             try
             {
-                string s = winW.ToString() + "x" + winH.ToString();
+                string s = (winMax ? "M" : "") + winW.ToString() + "x" + winH.ToString();
                 if (winX != int.MinValue && winY != int.MinValue)
                 {
                     s += "+" + winX.ToString() + "+" + winY.ToString();
@@ -577,10 +582,13 @@ namespace AfterSchool
             catch { }
 
             AppForm f = new AppForm(Url(), ico, winW, winH, winX, winY, webviewDir);
+            if (winMax) f.WindowState = FormWindowState.Maximized;
             f.FormClosed += delegate
             {
                 try
                 {
+                    winMax = f.WindowState == FormWindowState.Maximized;
+                    // 最大化时 Bounds 是整块屏幕：记 RestoreBounds（还原后的样子），回来才不会错位
                     Rectangle b = f.WindowState == FormWindowState.Normal ? f.Bounds : f.RestoreBounds;
                     if (b.Width >= 800 && b.Width <= 4000 && b.Height >= 600 && b.Height <= 3000)
                     {
@@ -925,6 +933,7 @@ namespace AfterSchool
         readonly string dataRoot;
         WebView2 view;
         NotifyIcon tray;
+        ToolStripMenuItem trayInfo;
         bool navigated;
         bool allowClose;
         bool trayTipShown;
@@ -973,6 +982,12 @@ namespace AfterSchool
             open.Font = new Font(menu.Font, FontStyle.Bold);
             open.Click += delegate { ShowFromTray(); };
             menu.Items.Add(open);
+
+            ToolStripMenuItem status = new ToolStripMenuItem("今天还没上课");
+            status.Enabled = false;
+            menu.Items.Add(status);
+            trayInfo = status;
+            menu.Opening += delegate { RefreshTrayInfo(); };
 
             ToolStripMenuItem folder = new ToolStripMenuItem("打开数据文件夹");
             folder.Click += delegate { OpenFolder(); };
@@ -1114,6 +1129,43 @@ namespace AfterSchool
             catch (Exception ex)
             {
                 Balloon("打不开文件夹", ex.Message);
+            }
+        }
+
+        /// <summary>托盘菜单第一行的小账：今天几节课、几个人课时不够。数据来自 /api/shell/tray。</summary>
+        void RefreshTrayInfo()
+        {
+            if (trayInfo == null) return;
+            try
+            {
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(startUrl + "api/shell/tray");
+                req.Timeout = 3000;
+                req.Proxy = null;
+                string body = "";
+                using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
+                using (StreamReader sr = new StreamReader(res.GetResponseStream(), Encoding.UTF8))
+                {
+                    body = sr.ReadToEnd();
+                }
+                int k = body.IndexOf("\"text\":\"");
+                if (k < 0)
+                {
+                    trayInfo.Text = "服务还没就绪";
+                    return;
+                }
+                k += 8;
+                StringBuilder sb = new StringBuilder();
+                while (k < body.Length && body[k] != '"')
+                {
+                    if (body[k] == '\\' && k + 1 < body.Length) k++;
+                    sb.Append(body[k]);
+                    k++;
+                }
+                trayInfo.Text = sb.ToString();
+            }
+            catch
+            {
+                trayInfo.Text = "服务不在跑";
             }
         }
 

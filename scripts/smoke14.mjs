@@ -141,6 +141,18 @@ try {
 }
 ok("/api/update 给出 ok 字段", typeof updJson.ok === "boolean", upd.text.slice(0, 160));
 
+// 托盘小账：桌面壳托盘菜单第一行就吃这个接口的 text 字段
+const tray = await req("/api/shell/tray");
+ok("/api/shell/tray 永远 200", tray.res.status === 200, String(tray.res.status));
+let trayJson = {};
+try {
+  trayJson = JSON.parse(tray.text);
+} catch {
+  trayJson = {};
+}
+ok("/api/shell/tray 给出 text 一句话", typeof trayJson.text === "string" && trayJson.text.length > 0, tray.text.slice(0, 160));
+ok("/api/shell/tray 的数字字段都在", typeof trayJson.todayLessons === "number" && typeof trayJson.lowBalance === "number" && typeof trayJson.needRecord === "number", tray.text.slice(0, 160));
+
 // 清理
 await del(`/api/lessons/${copied?.id}`);
 await del(`/api/lessons/${l1}`);
