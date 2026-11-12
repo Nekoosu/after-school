@@ -717,3 +717,15 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 
 - 网页与接口没改：**444 项接口冒烟 / 127 项点击检查 / 43 个单元测试**沿用 1.8.5 的数字，但仍然照跑一遍。
 - 壳的验证靠 CDP：起 exe 时带 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9455`，`Runtime.evaluate` 读 `location.pathname`、`location.href = "/records"` 换页，`--quit` 之后看 `data\lastpage.txt`，再起一次读回 `location.pathname` 是不是 `/records`。
+- **CDP 刚连上时默认执行上下文还是 `about:blank`**：`Runtime.evaluate("location.pathname")` 会返回字符串 `"blank"`，这时候发 `location.href=...` 等于发给了空气。要轮询到 `pathname !== "blank"` 再操作。
+
+## 39. 页面缩放与全屏（1.8.7）
+
+- WebView2 的 `Settings.IsZoomControlEnabled = true` 本来就让 Ctrl+滚轮 / Ctrl+加减号能缩放，**这一版只是把它记下来**：`view.ZoomFactorChanged` 里 `Launcher.SaveZoom((float)view.ZoomFactor)` → `data\zoom.txt`（1 就是原始大小，此时直接删文件），启动时 `Launcher.LoadZoom()` 读回来 `view.ZoomFactor = zoom`。
+- **`WebView2.ZoomFactor` 是 `double`**：`SaveZoom(float)` 收到它要显式 `(float)`，否则 `error CS1503: 无法从“double”转换为“float”`。存文件用 `InvariantCulture` 的 `"0.###"`，别让中文系统写出 `1,25`。
+- F11 全屏：`protected override bool ProcessCmdKey` 拦 `Keys.F11` 与全屏时的 `Keys.Escape` → `ToggleFullScreen()`（`FormBorderStyle.None` + 铺满 `Screen.FromControl(this).Bounds` + `TopMost`，退出时还原 `boundsBeforeFull` 与最大化状态）。
+- **全屏着关掉要先把窗口退回去**：`OnFormClosing` 里 `if (fullScreen) ToggleFullScreen();`，否则 `FormClosed` 读到的 `Bounds` 是整块屏幕，`window.txt` 会把「上次的大小」记成屏幕尺寸。
+- 缩放/全屏都只动壳，网页代码零改动，所以接口冒烟、点击检查、单测的数字不变（444 / 127 / 43）。
+- **别指望自动化按出缩放**：CDP 的 `Input.dispatchMouseEvent`（Ctrl+滚轮）和 `Input.dispatchKeyEvent`（Ctrl+加减号）都只到渲染进程，Chromium 的页面缩放是在浏览器进程里处理的；`SendKeys` 发出去也常落不到 WebView2 的子窗口上（`SetFocus` 只能给同线程窗口，跨进程要先把窗口激活并点一下页面）。
+- 所以这轮的验证改成两条能确定的证据：① 手写 `data\zoom.txt = 1.25` 再启动，CDP 读到 `window.devicePixelRatio = 1.25`（说明读回来并真的应用了）；② 带着 1.25 启动再 `--quit`，文件仍是 `1.25`（说明退出时读到的 `view.ZoomFactor` 就是 1.25，`SaveZoom` 的入参正确），比例是 1 时退出会把文件删掉。
+- `OnFormClosing` 里补一次 `Launcher.SaveZoom((float)view.ZoomFactor)` 兜底：`ZoomFactorChanged` 在某些输入路径下不触发。

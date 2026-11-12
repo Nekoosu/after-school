@@ -338,6 +338,45 @@ namespace AfterSchool
         }
 
         /// <summary>上次关掉时停在哪一页，这次还打开那儿（只记路径，不带 ? 和 #）。</summary>
+        static string ZoomFile()
+        {
+            return Join(dataDir, "zoom.txt");
+        }
+
+        /// <summary>上次把页面放大/缩小到多少，这次照旧（1 = 原始大小）。</summary>
+        internal static float LoadZoom()
+        {
+            try
+            {
+                string f = ZoomFile();
+                if (!File.Exists(f)) return 1f;
+                float z;
+                if (!float.TryParse(File.ReadAllText(f).Trim(),
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out z)) return 1f;
+                if (z < 0.6f) z = 0.6f;
+                if (z > 1.6f) z = 1.6f;
+                return z;
+            }
+            catch { return 1f; }
+        }
+
+        internal static void SaveZoom(float z)
+        {
+            try
+            {
+                if (z <= 0f) z = 1f;
+                if (Math.Abs(z - 1f) < 0.005f)
+                {
+                    if (File.Exists(ZoomFile())) File.Delete(ZoomFile());
+                    return;
+                }
+                File.WriteAllText(ZoomFile(),
+                    z.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
+            }
+            catch { }
+        }
+
         internal static string LoadLastPage()
         {
             try
@@ -1005,7 +1044,53 @@ namespace AfterSchool
             Controls.Add(view);
 
             Shown += OnShown;
+            view.ZoomFactorChanged += delegate
+            {
+                try { Launcher.SaveZoom((float)view.ZoomFactor); } catch { }
+            };
             BuildTray(ico);
+        }
+
+        /// <summary>F11 全屏看课表/报表，再按一次（或 Esc）回来。</summary>
+        bool fullScreen;
+        Rectangle boundsBeforeFull;
+        bool wasMaxBeforeFull;
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == Keys.F11)
+            {
+                ToggleFullScreen();
+                return true;
+            }
+            if (keyData == Keys.Escape && fullScreen)
+            {
+                ToggleFullScreen();
+                return true;
+            }
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        void ToggleFullScreen()
+        {
+            if (!fullScreen)
+            {
+                boundsBeforeFull = Bounds;
+                wasMaxBeforeFull = WindowState == FormWindowState.Maximized;
+                FormBorderStyle = FormBorderStyle.None;
+                WindowState = FormWindowState.Normal;
+                Bounds = Screen.FromControl(this).Bounds;
+                TopMost = true;
+                fullScreen = true;
+            }
+            else
+            {
+                TopMost = false;
+                FormBorderStyle = FormBorderStyle.Sizable;
+                Bounds = boundsBeforeFull;
+                if (wasMaxBeforeFull) WindowState = FormWindowState.Maximized;
+                fullScreen = false;
+            }
         }
 
         /// <summary>右下角托盘：点一下回来，右键能开数据文件夹、立刻备份、退出。</summary>
@@ -1350,6 +1435,13 @@ namespace AfterSchool
                 core.Settings.IsStatusBarEnabled = false;
                 core.Settings.IsZoomControlEnabled = true;
                 core.Settings.AreBrowserAcceleratorKeysEnabled = true;
+
+                // 上次放大的比例接着用（Ctrl+滚轮 / Ctrl+加号 改，Ctrl+0 回原样）
+                float zoom = Launcher.LoadZoom();
+                if (Math.Abs(zoom - 1f) > 0.005f)
+                {
+                    try { view.ZoomFactor = zoom; } catch { }
+                }
                 core.Settings.IsPasswordAutosaveEnabled = false;
 
                 // 让页面知道自己跑在桌面壳里（顶栏不再重复写软件名、右键菜单也不弹）
@@ -1461,6 +1553,11 @@ namespace AfterSchool
                 HideToTray();
                 return;
             }
+            // 全屏着关掉的话，先退回普通窗口，免得把整屏尺寸记成「上次的大小」
+            if (fullScreen) ToggleFullScreen();
+            // 退出时再记一次放大比例：Ctrl+滚轮 有时不走 ZoomFactorChanged，兜个底
+            try { if (view != null && view.CoreWebView2 != null) Launcher.SaveZoom((float)view.ZoomFactor); }
+            catch { }
             base.OnFormClosing(e);
         }
     }
