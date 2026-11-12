@@ -1434,7 +1434,9 @@ namespace AfterSchool
                 core.Settings.AreDevToolsEnabled = false;
                 core.Settings.IsStatusBarEnabled = false;
                 core.Settings.IsZoomControlEnabled = true;
-                core.Settings.AreBrowserAcceleratorKeysEnabled = true;
+                // Ctrl+N/Ctrl+Shift+N 这类页面级快捷键会先撞上 WebView2 内置的 Ctrl+N（开新窗），
+                // 干脆把内置浏览器快捷键全关掉，页面里的 keydown 才收得到（Ctrl+P/Ctrl+F 页面里也拦了）。
+                core.Settings.AreBrowserAcceleratorKeysEnabled = false;
 
                 // 上次放大的比例接着用（Ctrl+滚轮 / Ctrl+加号 改，Ctrl+0 回原样）
                 float zoom = Launcher.LoadZoom();

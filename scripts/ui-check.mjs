@@ -789,7 +789,38 @@ async function main() {
     await send("Emulation.clearDeviceMetricsOverride");
     await sleep(400);
 
-    console.log("\n[25] 控制台错误");
+    console.log("\n[25] Ctrl+N / Ctrl+Shift+N 与顶上那条进度条");
+    await goto("/", "今天");
+    const barThere = await evalJS(`return !!document.querySelector(".busybar");`);
+    ok("顶栏有「请求中」进度条的位置", barThere === true, String(barThere));
+
+    // 真按 Ctrl+N：让浏览器自己派发键盘事件，不是用 evalJS 造假 event
+    const keyOf = { type: "keyDown", modifiers: 2, key: "n", code: "KeyN", windowsVirtualKeyCode: 78, nativeVirtualKeyCode: 78 };
+    await send("Input.dispatchKeyEvent", keyOf);
+    await send("Input.dispatchKeyEvent", { ...keyOf, type: "keyUp" });
+    let ctrlN = { path: "", search: "" };
+    for (let i = 0; i < 24; i++) {
+      await sleep(250);
+      ctrlN = JSON.parse(String(await evalJS(`return JSON.stringify({ path: location.pathname, search: location.search });`)));
+      if (ctrlN.path === "/calendar" && ctrlN.search.includes("new=1")) break;
+    }
+    ok("Ctrl+N 跳到课表并带上 ?new=1", ctrlN.path === "/calendar" && ctrlN.search.includes("new=1"), JSON.stringify(ctrlN));
+    await sleep(800);
+    const ctrlNModal = await evalJS(`return !!document.querySelector(".modal");`);
+    ok("Ctrl+N 之后「新建」弹窗自己开了", ctrlNModal === true, String(ctrlNModal));
+
+    const shiftOf = { type: "keyDown", modifiers: 2 | 8, key: "N", code: "KeyN", windowsVirtualKeyCode: 78, nativeVirtualKeyCode: 78 };
+    await send("Input.dispatchKeyEvent", shiftOf);
+    await send("Input.dispatchKeyEvent", { ...shiftOf, type: "keyUp" });
+    let shiftN = { path: "", search: "" };
+    for (let i = 0; i < 24; i++) {
+      await sleep(250);
+      shiftN = JSON.parse(String(await evalJS(`return JSON.stringify({ path: location.pathname, search: location.search });`)));
+      if (shiftN.path === "/students" && shiftN.search.includes("new=1")) break;
+    }
+    ok("Ctrl+Shift+N 跳到学生页并带上 ?new=1", shiftN.path === "/students" && shiftN.search.includes("new=1"), JSON.stringify(shiftN));
+
+    console.log("\n[26] 控制台错误");
     const real = errors.filter((e) => e && !/favicon|Failed to load resource: the server responded with a status of 404/i.test(e));
     ok("页面没有脚本报错", real.length === 0, real.slice(0, 3).join(" | "));
   } finally {

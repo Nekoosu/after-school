@@ -1,16 +1,30 @@
 /** 浏览器端调用 API 的小封装：非 2xx 直接抛错，页面用 try/catch 显示 message */
 
-export async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-  });
-  const text = await res.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!res.ok) {
-    throw new Error((data as { error?: string }).error ?? `请求失败（${res.status}）`);
+// 在飞的请求数：顶栏那条小进度条靠它亮起来（AppShell 监听 as-busy 事件）
+let busyCount = 0;
+function bumpBusy(delta: number) {
+  busyCount = Math.max(0, busyCount + delta);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("as-busy", { detail: busyCount }));
   }
-  return data as T;
+}
+
+export async function api<T>(url: string, init?: RequestInit): Promise<T> {
+  bumpBusy(1);
+  try {
+    const res = await fetch(url, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    });
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : {};
+    if (!res.ok) {
+      throw new Error((data as { error?: string }).error ?? `请求失败（${res.status}）`);
+    }
+    return data as T;
+  } finally {
+    bumpBusy(-1);
+  }
 }
 
 export const post = <T>(url: string, body: unknown) =>

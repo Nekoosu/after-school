@@ -33,6 +33,10 @@ function isShell(): boolean {
 
 const SHORTCUTS: Array<{ keys: string; what: string }> = [
   { keys: "Ctrl+K", what: "全局搜索：学生、课程、教案、上课记录" },
+  { keys: "Ctrl+N", what: "排一节课（跳到课表并打开新建）" },
+  { keys: "Ctrl+Shift+N", what: "加一个学生" },
+  { keys: "Ctrl+P", what: "打印当前页（课表、对账单、月报都能打）" },
+  { keys: "Ctrl+F", what: "打开搜索（同 Ctrl+K）" },
   { keys: "Ctrl+B", what: "收起 / 展开左侧导航" },
   { keys: "?", what: "打开这份快捷键说明" },
   { keys: "Esc", what: "关掉弹窗、菜单、搜索面板" },
@@ -154,6 +158,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [, setThemePref] = useState<"light" | "dark" | "system">("system");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [themeReady, setThemeReady] = useState(false);
+  // 有请求在飞时顶上一条细进度条：本地库里多数查询几十毫秒，但导出、月报这种会慢
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setNavOpen(false);
@@ -318,7 +324,43 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // PWA：注册一个不缓存的 service worker，手机上才能「添加到主屏幕」
+  // Ctrl/⌘ + N：排一节课；Ctrl/⌘ + Shift + N：加一个学生（在输入框里打字时不拦）
+  // Ctrl+P 打印、Ctrl+F 打开搜索：桌面壳里 WebView2 的内置快捷键是关掉的（否则 Ctrl+N 会被它拿去开新窗）
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const key = e.key.toLowerCase();
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName?.toLowerCase();
+      const typing = tag === "input" || tag === "textarea" || tag === "select" || !!el?.isContentEditable;
+      if (key === "p") {
+        e.preventDefault();
+        window.print();
+        return;
+      }
+      if (key === "f" && !typing) {
+        e.preventDefault();
+        setSearchOpen(true);
+        return;
+      }
+      if (key !== "n" || typing) return;
+      e.preventDefault();
+      window.location.href = e.shiftKey ? "/students?new=1" : "/calendar?new=1";
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // 请求在飞就把顶上那条进度条点亮（api() 会发 as-busy 事件，带当前在飞数量）
+  useEffect(() => {
+    function onBusy(e: Event) {
+      const n = (e as CustomEvent<number>).detail ?? 0;
+      setBusy(n > 0);
+    }
+    window.addEventListener("as-busy", onBusy);
+    return () => window.removeEventListener("as-busy", onBusy);
+  }, []);
+
   useEffect(() => {
     if (process.env.NODE_ENV !== "production") return;
     if (!("serviceWorker" in navigator)) return;
@@ -435,6 +477,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="main">
+        <div className={cn("busybar", busy && "on")} aria-hidden="true" />
         <header className="topbar">
           {/* 展开时「收起」只在侧栏底部那一个；收起后（或手机上）这个按钮才是回来的路 */}
           {narrow || collapsed ? (

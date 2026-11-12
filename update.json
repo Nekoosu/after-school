@@ -1,6 +1,6 @@
 {
-  "version": "1.8.10",
-  "url": "https://github.com/Nekoosu/after-school/releases/download/v1.8.10/after-school-1.8.10.zip",
-  "notes": "清单读不到时会自动再问一次 GitHub；仓库改成公开后两条路都通。",
+  "version": "1.8.11",
+  "url": "https://github.com/Nekoosu/after-school/releases/download/v1.8.11/after-school-1.8.11.zip",
+  "notes": "Ctrl+N 排一节课、Ctrl+Shift+N 加学生；有活儿在跑时顶上一条细进度条。",
   "publishedAt": "2026-11-12"
 }

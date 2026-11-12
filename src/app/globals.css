@@ -4926,3 +4926,43 @@ html {
     padding-top: 14px;
   }
 }
+
+/* 顶栏顶上那条「有活儿在跑」的细进度条（1.8.11）
+   有请求在飞时才出现：本地库多数几十毫秒，一闪而过；导出、月报能明显看到它在跑。 */
+.busybar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 3000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s var(--ease);
+}
+.busybar.on {
+  opacity: 1;
+}
+.busybar::after {
+  content: "";
+  display: block;
+  height: 100%;
+  width: 38%;
+  border-radius: 0 2px 2px 0;
+  background: linear-gradient(90deg, var(--brand), var(--violet));
+  animation: busybar-slide 0.95s linear infinite;
+}
+@keyframes busybar-slide {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(320%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .busybar.on::after {
+    animation: none;
+    width: 100%;
+  }
+}

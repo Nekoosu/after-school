@@ -771,3 +771,15 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 - 冒烟 `scripts/smoke14.mjs` 那条「清单打不开也是 200 + ok:false」后面补一条：`typeof upd3.body?.fallbackError === "string"` —— 它能证明**回退确实执行过**（本机 GitHub 是私有仓库、必然 404，所以这条同时覆盖了「两边都挂」的分支）。
 - 基线：冒烟 **449**、ui-check 129、单测 43（网页侧没加新交互，ui-check 不用动）。
 - 教训：这类「以后会变好的外部条件」不要写成一次性手工步骤（比如让用户到时候去设置页填地址），要在代码里留兜底路径——用户说过一次「以后会公开」，就当它一定会发生。
+## 43. 快捷键与顶上那条进度条（1.8.11）
+
+用户说「按你的想法来」之后挑的两件小活：`Ctrl+N` 排课、`Ctrl+Shift+N` 加学生；以及一个「有活儿在跑」的顶端细进度条（**不是骨架屏**——`src/components/ui.tsx` 的 `PageLoading` 早就被 16 个页面用来做首屏骨架了，重复做没意义）。
+
+- `src/lib/client.ts`：模块级 `let busyCount = 0` + `bumpBusy(delta)`，`api<T>()` 里 `bumpBusy(1)`、`finally { bumpBusy(-1) }`，每次变动 `window.dispatchEvent(new CustomEvent("as-busy", { detail: busyCount }))`。**decrement 必须在 finally**，否则一次抛错就把进度条钉在顶上。
+- `src/components/AppShell.tsx`：监听 `as-busy` → `setBusy(n > 0)`；`.main` 里 `<header>` 之前渲染 `<div className={cn("busybar", busy && "on")} aria-hidden="true" />`。
+- 快捷键：`window.addEventListener("keydown")`，先判 `(e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n"`，再判焦点在 `input/textarea/select/[contenteditable]` 里就 return（别抢用户打字的 Ctrl+N），否则 `e.preventDefault()` 后 **`window.location.href` 硬跳**——`?new=1` 靠 `useAutoNew` 在挂载时读 search，`<Link>` 软跳不重新挂载，弹窗不会开（1.1.0 那次 FAB 也踩过同一个坑）。
+- 样式：`.busybar`（`position:fixed; top:0; height:3px; z-index:3000; pointer-events:none`）+ `::after` 一条 38% 宽的 brand→violet 渐变来回滑；`prefers-reduced-motion` 下关动画、改成整条常亮。只在有请求时 `opacity:1`，本地库多数几十毫秒，一闪而过。
+- **ui-check 怎么测**：`Input.dispatchKeyEvent`（`type:"keyDown"` + `"keyUp"`、`modifiers` 用位运算 Ctrl=2、Shift=8、`key`/`code`/`windowsVirtualKeyCode:78` 都要给）。页面级的 keydown 能被这样派发到；但**浏览器级快捷键（Ctrl+滚轮缩放、Ctrl+0）测不了**，那条路由只能靠读写 `data/zoom.txt` + `devicePixelRatio` 验（见 §39）。
+- 基线：冒烟 449、ui-check 133、单测 43（冒烟不动：这两个键是纯前端，`/api` 没有新增）。- **踩到的坑（本轮最值钱的一条）**：页面上 `Ctrl+N` 明明写了处理，在浏览器里（ui-check）跳得好好的，装进桌面壳里按下去却毫无反应、`Ctrl+Shift+N` 反而正常——因为 WebView2 把 `Ctrl+N` 当自己的「开新窗口」快捷键吃掉了。解法：`core.Settings.AreBrowserAcceleratorKeysEnabled = false;`（`launcher/Launcher.cs` 里原来显式写的是 `true`），把内置浏览器快捷键全交给页面。代价与配套：Ctrl+P / Ctrl+F 也就没人管了，所以在 `AppShell` 里一并接管——`Ctrl+P` → `window.print()`（壳里被替成 `as-print` 消息 → 系统打印预览）、`Ctrl+F` → 打开搜索面板、`Ctrl+N`/`Ctrl+Shift+N` 照旧。
+- **改完必须验缩放**：`AreBrowserAcceleratorKeysEnabled = false` 理论上不影响 Ctrl+滚轮缩放（那是 WebView2 自己的缩放，不走快捷键表），实测也确实是——用 Win32 注入（`keybd_event` 按住 VK 0x11 + `mouse_event` 0x0800 delta 120 ×3）在真窗口上滚三格，退出后 `data/zoom.txt` 变成 **1.25**，说明 `ZoomFactorChanged` 照旧触发、比例照旧记住。写这类「注入真实输入」的脚本：`Add-Type` 里要 `EnumWindows + GetWindowThreadProcessId` 按 pid 找窗（`FindWindow($null,…)` 在 PS 里传空串，抓不到），并把窗口 `SetForegroundWindow` + `SetCursorPos` 到中心再注入。
+- ui-check 里测这条时用 `Input.dispatchKeyEvent` 派发到页面（浏览器环境里没有 WebView2 的加速键，能过不代表壳里能过）——**页面级断言只能证明代码路径对，壳里的真行为必须靠打包版 + 真键盘/注入验**。这次就是靠打包版实测才发现 Ctrl+N 被吃。
