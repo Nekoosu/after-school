@@ -584,3 +584,21 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 5. 用 `waitFor(document.body.innerText.includes("跟家长说一句"))` 等收尾页会**永远立刻通过**：顶栏面包屑本来就叫这个名。要等页面自己的东西，比如 `!!document.querySelector("textarea.textarea")`。
 6. 服务端返回的 HTML 里没有 client 组件的真实内容（只有骨架），**页面白不白、有没有内容，只能用 `scripts\cdp-err.mjs <url>` 真开浏览器看**。
 7. 界面验证基线（1.7.0）：**434 项接口冒烟 / 114 项点击检查 / 43 个单元测试**；`scripts\shot.mjs` 现在支持 `SHOT_W`/`SHOT_H`（如 `SHOT_W=375 SHOT_H=812`，文件名自动带宽度），`scripts\shot-print.mjs` 用 `Emulation.setEmulatedMedia({media:"print"})` + A4 视口拍打印效果。
+
+## 34. 看起来像个软件，不是网页（1.7.1）
+
+### 这一版改了什么
+
+1. **标题栏横贯整窗**：`--topbar-h` 60 → **54px**，`.sidebar-brand` 和 `.topbar` 同高、同为 `var(--surface)`、`border-bottom` 接成一条线，看上去是应用自己的一条标题栏，不是「网页上浮着一条工具栏」。改高度只改 `--topbar-h`，两边都会跟。
+2. **侧边栏**：`.nav-item` 高 36px、字号 13px；当前项左侧 `::before` 一道 3px 竖条（`left:-10px` 抵消 padding）；折叠态靠 `data-label` + `.nav-collapsed .nav-item::after` 悬停浮出页面名；`<=980px` 抽屉宽 268px 带投影。
+3. **手机抽屉锁背景**：`[narrow, navOpen]` 的 effect 里 `document.body.style.overflow="hidden"`，Esc 关闭并还原原值。
+4. **桌面壳判定**：`matchMedia("(display-mode: standalone)")`命中就 `document.documentElement.dataset.shell = "app"`，拦 `contextmenu`/`dragstart`/`selectstart`——但输入框、textarea、select、pre/code、`.manual-body`、`.md`、`.selectable`、`.share-body`、`[contenteditable]` 放行，否则连字都复制不了。壳里 `document.title` 固定「课后服务管理」，浏览器里仍是「页面名 · 课后服务管理」。
+5. **主题点一下就切**：顶栏只留一个按钮，`pickTheme(theme === "dark" ? "light" : "dark")`；「跟随系统」搬到**设置 → 外观**的下拉里，选完写 `localStorage["as-theme"]`、改 `documentElement.dataset.theme`、`dispatchEvent(new Event("as-theme"))`，AppShell 监听这个事件同步图标（两处不能对不上）。
+6. **AI 模型名改成下拉**：`/api/ai/models` 拿到列表后**只有在没填过时才自动选第一个**（原逻辑「填的不在列表里就覆盖」会冲掉用户选择）；下拉末尾一项 `__custom__`「手动填写…」切回输入框，切回来用「从列表选」按钮。`datalist` 已彻底删掉——默认值不再挡住别的选项。
+
+### 坑
+
+1. `.sidebar-brand` **没有自己的背景**（透明，透出 `.sidebar` 的 `--surface`）。断言「顶栏和侧栏同色」要比 `.topbar` 与 `.sidebar`，比 brand 会拿到 `rgba(0,0,0,0)`。
+2. 在同一个 `evalJS` 里「点按钮 + 立刻读 DOM」拿到的是点击前的状态（React 还没提交）。点一下、`sleep(400~500)`、再读。
+3. 改了 UI 结构记得回头改断言：这一轮 `datalist` 换成 `<select>` 后，`[17]` 里「模型名输入框挂了 datalist」直接变红——断言跟着实现走，别让它替实现背锅。
+4. 验证基线（1.7.1）：**434 项接口冒烟 / 121 项点击检查 / 43 个单元测试**。

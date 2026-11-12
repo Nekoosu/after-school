@@ -457,7 +457,19 @@ async function main() {
     ok("导出链接带上当前范围", /from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}/.test(icsHref), icsHref);
     await goto("/settings", "设置");
     ok("AI 卡里有「自动获取」按钮", (await evalJS(`return !!([...document.querySelectorAll("button")].find((b) => b.textContent.includes("自动获取")));`)) === true);
-    ok("模型名输入框挂了 datalist", (await evalJS(`return !!document.querySelector('input[list="ai-model-options"]');`)) === true);
+    // 模型名现在是「输入框 / 下拉」二选一，不再靠 datalist（默认值不会挡住别的选项）
+    const modelField = JSON.parse(
+      String(
+        await evalJS(`return JSON.stringify((() => {
+          const inp = document.querySelector('input.input.mono[placeholder="deepseek-chat"]');
+          const sel = document.querySelector("select.select.mono");
+          const el = inp || sel;
+          return { kind: inp ? "input" : sel ? "select" : "", value: el ? el.value : "" };
+        })());`),
+      ),
+    );
+    ok("模型名字段是输入框或下拉（不再靠 datalist）", modelField.kind === "input" || modelField.kind === "select", JSON.stringify(modelField));
+    ok("默认模型名是 deepseek-chat", modelField.value === "deepseek-chat", JSON.stringify(modelField));
 
     console.log("\n[18] 老师页：登记一位老师，课表能按老师筛");
     await goto("/teachers", "老师");
@@ -629,23 +641,29 @@ async function main() {
     await send("Emulation.clearDeviceMetricsOverride");
     await sleep(400);
 
-    console.log("\n[23] 主题三态与快捷键说明");
+    console.log("\n[23] 主题单击切换与快捷键说明");
     await goto("/", "");
-    await sleep(600);
+    await sleep(700);
+    const themeStart = String(await evalJS(`return document.documentElement.dataset.theme || "light";`));
     await evalJS(`return (() => { document.querySelector(".topbar-theme-btn").click(); return true; })();`);
-    await sleep(350);
-    const themeTexts = String(
-      await evalJS(
-        `return Array.from(document.querySelectorAll(".topbar-actions .menu .menu-item")).map((e) => e.textContent.trim()).join("|");`,
+    await sleep(400);
+    const themeAfter = JSON.parse(
+      String(
+        await evalJS(`return JSON.stringify({
+          theme: document.documentElement.dataset.theme || "light",
+          saved: localStorage.getItem("as-theme") || "",
+        });`),
       ),
     );
     ok(
-      "主题菜单有浅色 / 深色 / 跟随系统",
-      themeTexts.includes("浅色") && themeTexts.includes("深色") && themeTexts.includes("跟随系统"),
-      themeTexts,
+      "点一下主题按钮就切过去（不用展开菜单）",
+      themeAfter.theme !== themeStart && themeAfter.saved === themeAfter.theme,
+      JSON.stringify({ themeStart, themeAfter }),
     );
-    await evalJS(`return (() => { document.body.click(); return true; })();`);
-    await sleep(250);
+    await evalJS(`return (() => { document.querySelector(".topbar-theme-btn").click(); return true; })();`);
+    await sleep(400);
+    const themeBack = String(await evalJS(`return document.documentElement.dataset.theme || "light";`));
+    ok("再点一下切回来", themeBack === themeStart, `back = ${themeBack}`);
     await evalJS(`return (() => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true }));
       return true;
@@ -669,7 +687,57 @@ async function main() {
         /有 \d+\.\d+\.\d+ 可用/.test(aboutText));
     ok("设置页「关于」里有新版本一栏", hasUpdateRow, hasUpdateRow ? "ok" : "缺少新版本一栏");
 
-    console.log("\n[24] 控制台错误");
+    console.log("\n[24] 标题栏一体、当前项竖条、手机抽屉");
+    await goto("/calendar", "");
+    await sleep(900);
+    const bar = JSON.parse(
+      String(
+        await evalJS(`return JSON.stringify((() => {
+          const top = document.querySelector(".topbar");
+          const brand = document.querySelector(".sidebar-brand");
+          const item = document.querySelector(".nav-item.active");
+          const before = item ? getComputedStyle(item, "::before") : null;
+          return {
+            topH: Math.round(top.getBoundingClientRect().height),
+            brandH: Math.round(brand.getBoundingClientRect().height),
+            topBg: getComputedStyle(top).backgroundColor,
+            brandBg: getComputedStyle(document.querySelector(".sidebar")).backgroundColor,
+            barW: before ? before.width : "",
+            barContent: before ? before.content : "",
+          };
+        })());`),
+      ),
+    );
+    ok("顶栏和侧栏头部一样高", bar.topH === bar.brandH && bar.topH === 54, JSON.stringify([bar.topH, bar.brandH]));
+    ok("顶栏和侧栏同一块底色", bar.topBg === bar.brandBg, bar.topBg + " vs " + bar.brandBg);
+    ok("当前页左侧有一道竖条", bar.barW === "3px" && bar.barContent !== "none", bar.barW + " " + bar.barContent);
+
+    await send("Emulation.setDeviceMetricsOverride", { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
+    await goto("/calendar", "");
+    await sleep(900);
+    await evalJS(`return (() => { document.querySelector(".topbar-menu").click(); return true; })();`);
+    await sleep(500);
+    const opened = JSON.parse(
+      String(
+        await evalJS(`return JSON.stringify({ open: !!document.querySelector(".sidebar.open"), lock: document.body.style.overflow });`),
+      ),
+    );
+    ok("手机上点 ☰ 抽屉展开且背景不滚", opened.open === true && opened.lock === "hidden", JSON.stringify(opened));
+    await evalJS(`return (() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      return true;
+    })();`);
+    await sleep(450);
+    const closed = JSON.parse(
+      String(
+        await evalJS(`return JSON.stringify({ open: !!document.querySelector(".sidebar.open"), lock: document.body.style.overflow });`),
+      ),
+    );
+    ok("Esc 关掉抽屉并把滚动还回去", closed.open === false && closed.lock !== "hidden", JSON.stringify(closed));
+    await send("Emulation.clearDeviceMetricsOverride");
+    await sleep(400);
+
+    console.log("\n[25] 控制台错误");
     const real = errors.filter((e) => e && !/favicon|Failed to load resource: the server responded with a status of 404/i.test(e));
     ok("页面没有脚本报错", real.length === 0, real.slice(0, 3).join(" | "));
   } finally {

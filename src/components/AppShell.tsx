@@ -24,12 +24,6 @@ interface NavGroup {
 
 type ThemePref = "light" | "dark" | "system";
 
-const THEME_LABEL: Record<ThemePref, string> = {
-  light: "浅色",
-  dark: "深色",
-  system: "跟随系统",
-};
-
 const SHORTCUTS: Array<{ keys: string; what: string }> = [
   { keys: "Ctrl+K", what: "全局搜索：学生、课程、教案、上课记录" },
   { keys: "Ctrl+B", what: "收起 / 展开左侧导航" },
@@ -150,7 +144,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [low, setLow] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [themePref, setThemePref] = useState<"light" | "dark" | "system">("system");
+  const [, setThemePref] = useState<"light" | "dark" | "system">("system");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [themeReady, setThemeReady] = useState(false);
 
@@ -158,9 +152,43 @@ export function AppShell({ children }: { children: ReactNode }) {
     setNavOpen(false);
     setSearchOpen(false);
     setHelpOpen(false);
-    // 标题跟着页面走：浏览器标签、任务栏、任务视图里都能认出是哪一页
-    document.title = `${titleOf(pathname)} · 课后服务管理`;
+    // 标题跟着页面走：浏览器标签、任务栏、任务视图里都能认出是哪一页；
+    // 桌面壳（Edge 的 --app 窗口）里只要软件名，别把页面名塞进窗口标题，看着才像软件。
+    const inShell = window.matchMedia?.("(display-mode: standalone)").matches ?? false;
+    document.title = inShell ? "课后服务管理" : `${titleOf(pathname)} · 课后服务管理`;
   }, [pathname]);
+
+  // 桌面壳里把「网页感」收掉：右键菜单、双击选词、拖图片一律不响应（输入框和手册正文除外）
+  useEffect(() => {
+    const inShell = window.matchMedia?.("(display-mode: standalone)").matches ?? false;
+    if (!inShell) return;
+    document.documentElement.dataset.shell = "app";
+    const isText = (el: EventTarget | null) => {
+      const n = el as HTMLElement | null;
+      if (!n || !n.tagName) return false;
+      const tag = n.tagName.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return true;
+      if (tag === "pre" || tag === "code") return true;
+      if (n.isContentEditable) return true;
+      return Boolean(n.closest?.(".manual-body, .md, .selectable, .share-body"));
+    };
+    const onContext = (e: MouseEvent) => {
+      if (!isText(e.target)) e.preventDefault();
+    };
+    const onDrag = (e: DragEvent) => e.preventDefault();
+    const onSelectStart = (e: Event) => {
+      if (!isText(e.target)) e.preventDefault();
+    };
+    document.addEventListener("contextmenu", onContext);
+    document.addEventListener("dragstart", onDrag);
+    document.addEventListener("selectstart", onSelectStart);
+    return () => {
+      delete document.documentElement.dataset.shell;
+      document.removeEventListener("contextmenu", onContext);
+      document.removeEventListener("dragstart", onDrag);
+      document.removeEventListener("selectstart", onSelectStart);
+    };
+  }, []);
 
   // 侧边栏收/展：读本地记住的状态 + 跟着窗口宽度判断「现在是不是手机布局」
   useEffect(() => {
@@ -213,6 +241,21 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // 手机抽屉拉开时别让底下的页面跟着滚；Esc 关掉它
+  useEffect(() => {
+    if (!narrow || !navOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setNavOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [narrow, navOpen]);
+
   // 主题：浅色 / 深色 / 跟随系统（没选过就跟系统走，系统切了也跟着切）
   useEffect(() => {
     const saved = localStorage.getItem("as-theme");
@@ -230,7 +273,18 @@ export function AppShell({ children }: { children: ReactNode }) {
       }
     };
     mq?.addEventListener?.("change", onSystemChange);
-    return () => mq?.removeEventListener?.("change", onSystemChange);
+    // 设置页的「外观」改了主题，这边跟着换图标，别让两处对不上
+    const onThemeEvent = () => {
+      const now = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+      setTheme(now);
+      const saved2 = localStorage.getItem("as-theme");
+      setThemePref(saved2 === "light" || saved2 === "dark" ? saved2 : "system");
+    };
+    window.addEventListener("as-theme", onThemeEvent);
+    return () => {
+      mq?.removeEventListener?.("change", onSystemChange);
+      window.removeEventListener("as-theme", onThemeEvent);
+    };
   }, []);
 
   function applyTheme(pref: ThemePref, systemDark: boolean) {
@@ -333,6 +387,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     href={l.href}
                     className={cn("nav-item", active && "active")}
                     title={collapsed ? l.label : undefined}
+                    data-label={l.label}
                   >
                     <Icon name={l.icon} size={17} />
                     <span>{l.label}</span>
@@ -460,51 +515,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               <Icon name="info" size={17} />
             </button>
-            <Menu
-              align="right"
-              trigger={
-                <button
-                  className="btn btn-icon btn-ghost topbar-theme-btn"
-                  aria-label="主题"
-                  title={"主题：" + THEME_LABEL[themePref]}
-                  style={{ opacity: themeReady ? 1 : 0 }}
-                >
-                  <Icon name={theme === "dark" ? "sun" : "moon"} size={17} />
-                </button>
-              }
+            <button
+              className="btn btn-icon btn-ghost topbar-theme-btn"
+              onClick={() => {
+                // 一下切换浅色/深色；想「跟随系统」在设置页的「外观」里选
+                const next = theme === "dark" ? "light" : "dark";
+                pickTheme(next);
+              }}
+              aria-label="切换主题"
+              title={theme === "dark" ? "切到浅色" : "切到深色"}
+              style={{ opacity: themeReady ? 1 : 0 }}
             >
-              {(close) => (
-                <>
-                  <MenuItem
-                    icon="sun"
-                    onClick={() => {
-                      pickTheme("light");
-                      close();
-                    }}
-                  >
-                    浅色
-                  </MenuItem>
-                  <MenuItem
-                    icon="moon"
-                    onClick={() => {
-                      pickTheme("dark");
-                      close();
-                    }}
-                  >
-                    深色
-                  </MenuItem>
-                  <MenuItem
-                    icon="zap"
-                    onClick={() => {
-                      pickTheme("system");
-                      close();
-                    }}
-                  >
-                    跟随系统
-                  </MenuItem>
-                </>
-              )}
-            </Menu>
+              <Icon name={theme === "dark" ? "sun" : "moon"} size={17} />
+            </button>
             <span className="topbar-date">{dateLabel}</span>
           </div>
         </header>

@@ -79,9 +79,30 @@ export default function SettingsPage() {
   const [deleting, setDeleting] = useState(false);
   const [importScope, setImportScope] = useState<null | "students" | "plans" | "classes">(null);
   const [aiTest, setAiTest] = useState<{ busy: boolean; ok: boolean; msg: string }>({ busy: false, ok: false, msg: "" });
-  // 「自动获取模型名」：拉一次 /models，把可选值放进 datalist
+  // 「自动获取模型名」：拉一次 /models，拿到的名字变成下拉选项（不用先删掉默认值）
   const [modelsBusy, setModelsBusy] = useState(false);
   const [aiModels, setAiModels] = useState<string[]>([]);
+  // 想填列表里没有的名字时切到手填
+  const [modelManual, setModelManual] = useState(false);
+  // 主题：light / dark 存在 localStorage，system 表示跟着 Windows 走
+  const [themePref, setThemePref] = useState<"light" | "dark" | "system">("system");
+
+  useEffect(() => {
+    const t = localStorage.getItem("as-theme");
+    setThemePref(t === "light" || t === "dark" ? t : "system");
+  }, []);
+
+  function changeTheme(next: "light" | "dark" | "system") {
+    setThemePref(next);
+    const sysDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+    const resolved = next === "system" ? (sysDark ? "dark" : "light") : next;
+    if (next === "system") localStorage.removeItem("as-theme");
+    else localStorage.setItem("as-theme", next);
+    document.documentElement.dataset.theme = resolved;
+    // 顶栏那个图标跟着换
+    window.dispatchEvent(new Event("as-theme"));
+    toast.ok(next === "system" ? "主题跟着系统走" : next === "dark" ? "换成深色了" : "换成浅色了");
+  }
 
   async function fetchModels() {
     if (!s) return;
@@ -93,9 +114,10 @@ export default function SettingsPage() {
       });
       if (r.ok && r.models && r.models.length > 0) {
         setAiModels(r.models);
-        // 没填过或填的不在列表里，就自动选第一个
-        if (!r.models.includes(s.ai_model ?? "")) set("ai_model", r.models[0]);
-        toast.ok(`拿到 ${r.models.length} 个模型名，已选「${r.models[0]}」`);
+        setModelManual(false);
+        // 没填过就选第一个；已经填了（哪怕不在列表里）就不动它，免得把用户的选择冲掉
+        if (!s.ai_model) set("ai_model", r.models[0]);
+        toast.ok(`拿到 ${r.models.length} 个模型名，点下拉就能换`);
       } else {
         toast.bad(r.error ?? "没拿到模型名");
       }
@@ -347,6 +369,23 @@ export default function SettingsPage() {
         </Card>
       </div>
 
+      <Section title="外观" mt>
+        <Card>
+          <CardHead title="界面" icon="sun" sub="顶栏的小太阳/月亮按一下就切；想让软件跟着系统走，在这里选" />
+          <div className="card-body">
+            <div className="form-grid">
+              <Field label="主题" hint="「跟随系统」会随 Windows 的深色模式自动变" span2>
+                <select className="select" value={themePref} onChange={(e) => changeTheme(e.target.value as "light" | "dark" | "system")}>
+                  <option value="system">跟随系统</option>
+                  <option value="light">浅色</option>
+                  <option value="dark">深色</option>
+                </select>
+              </Field>
+            </div>
+          </div>
+        </Card>
+      </Section>
+
       <Section title="AI 润色（可选）" mt>
         <Card>
           <CardHead
@@ -371,21 +410,60 @@ export default function SettingsPage() {
                   <option value="1">开启</option>
                 </select>
               </Field>
-              <Field label="模型名" hint="点「自动获取」让接口自己报名字；报不出来也能手填">
+              <Field
+                label="模型名"
+                hint={
+                  aiModels.length > 0 && !modelManual
+                    ? "下拉里是接口自己报上来的模型；要填别的就选「手动填写」"
+                    : "点「自动获取」让接口自己报名字；报不出来也能手填"
+                }
+              >
                 <div className="row" style={{ gap: 8 }}>
-                  <input
-                    className="input"
-                    style={{ flex: 1 }}
-                    list="ai-model-options"
-                    value={s.ai_model ?? ""}
-                    onChange={(e) => set("ai_model", e.target.value)}
-                    placeholder="deepseek-chat"
-                  />
-                  <datalist id="ai-model-options">
-                    {aiModels.map((m) => (
-                      <option key={m} value={m} />
-                    ))}
-                  </datalist>
+                  {aiModels.length > 0 && !modelManual ? (
+                    <select
+                      className="select mono"
+                      style={{ flex: 1 }}
+                      value={s.ai_model ?? ""}
+                      onChange={(e) => {
+                        if (e.target.value === "__custom__") {
+                          setModelManual(true);
+                          return;
+                        }
+                        set("ai_model", e.target.value);
+                      }}
+                    >
+                      {(aiModels.includes(s.ai_model ?? "")
+                        ? aiModels
+                        : [s.ai_model ?? "", ...aiModels].filter(Boolean)
+                      ).map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                      <option value="__custom__">手动填写…</option>
+                    </select>
+                  ) : (
+                    <input
+                      className="input mono"
+                      style={{ flex: 1 }}
+                      value={s.ai_model ?? ""}
+                      onChange={(e) => set("ai_model", e.target.value)}
+                      placeholder="deepseek-chat"
+                    />
+                  )}
+                  {modelManual ? (
+                    <Btn
+                      size="sm"
+                      icon="list"
+                      onClick={() => {
+                        setModelManual(false);
+                        if (aiModels.length === 0) void fetchModels();
+                      }}
+                      title="回到下拉列表"
+                    >
+                      从列表选
+                    </Btn>
+                  ) : null}
                   <Btn size="sm" icon="down" loading={modelsBusy} onClick={fetchModels} title="从接口拉一次可用模型名">
                     自动获取
                   </Btn>
