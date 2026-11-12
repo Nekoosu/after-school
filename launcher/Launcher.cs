@@ -332,6 +332,43 @@ namespace AfterSchool
             return "http://127.0.0.1:" + port.ToString() + "/";
         }
 
+        static string LastPageFile()
+        {
+            return Join(dataDir, "lastpage.txt");
+        }
+
+        /// <summary>上次关掉时停在哪一页，这次还打开那儿（只记路径，不带 ? 和 #）。</summary>
+        internal static string LoadLastPage()
+        {
+            try
+            {
+                string f = LastPageFile();
+                if (!File.Exists(f)) return "";
+                string s = File.ReadAllText(f).Trim();
+                if (s.Length == 0 || s.Length > 200) return "";
+                if (!s.StartsWith("/")) return "";
+                if (s.StartsWith("/share")) return "";
+                if (s.IndexOf('?') >= 0 || s.IndexOf('#') >= 0) return "";
+                return s;
+            }
+            catch { return ""; }
+        }
+
+        internal static void SaveLastPage(string path)
+        {
+            try
+            {
+                string f = LastPageFile();
+                if (string.IsNullOrEmpty(path) || path == "/")
+                {
+                    if (File.Exists(f)) File.Delete(f);
+                    return;
+                }
+                File.WriteAllText(f, path);
+            }
+            catch { }
+        }
+
         static int ReadPortFile()
         {
             try
@@ -929,6 +966,7 @@ namespace AfterSchool
     class AppForm : Form
     {
         readonly string startUrl;
+        readonly string startPath;
         readonly string dataDir;
         readonly string dataRoot;
         WebView2 view;
@@ -936,6 +974,7 @@ namespace AfterSchool
         ToolStripMenuItem trayInfo;
         ToolStripMenuItem trayUpdate;
         string updateUrl = "";
+        string lastSaved = "";
         bool navigated;
         bool allowClose;
         bool trayTipShown;
@@ -944,6 +983,7 @@ namespace AfterSchool
         public AppForm(string url, Icon ico, int w, int h, int x, int y, string webviewDataDir)
         {
             startUrl = url;
+            startPath = Launcher.LoadLastPage();
             dataDir = webviewDataDir;
             dataRoot = Path.GetDirectoryName(webviewDataDir);
 
@@ -1358,7 +1398,10 @@ namespace AfterSchool
                     }
                 };
 
-                core.Navigate(startUrl);
+                // 关了再开，还停在上次那一页（像正经软件那样）
+                core.SourceChanged += RememberPage;
+
+                core.Navigate(startUrl + startPath);
             }
             catch (Exception ex)
             {
@@ -1372,6 +1415,28 @@ namespace AfterSchool
                 }
                 Close();
             }
+        }
+
+        /// <summary>换页时把当前路径记下来（查询串、锚点都不记，免得下次一开就弹出窗口）。</summary>
+        void RememberPage(object sender, CoreWebView2SourceChangedEventArgs a)
+        {
+            try
+            {
+                CoreWebView2 c = (CoreWebView2)sender;
+                string u = c.Source;
+                if (string.IsNullOrEmpty(u)) return;
+                if (!u.StartsWith(startUrl)) return;
+                string rest = u.Substring(startUrl.Length);
+                int cut = rest.IndexOfAny(new char[] { '?', '#' });
+                if (cut >= 0) rest = rest.Substring(0, cut);
+                // startUrl 本身以「/」结尾，剥完剩下的「records」要补回前导斜杠
+                if (rest.Length > 0 && !rest.StartsWith("/")) rest = "/" + rest;
+                if (rest.Length > 200) return;
+                if (rest == lastSaved) return;
+                lastSaved = rest;
+                Launcher.SaveLastPage(rest);
+            }
+            catch { }
         }
 
         void DoPrint(CoreWebView2 core)

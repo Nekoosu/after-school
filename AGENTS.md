@@ -700,3 +700,20 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 - **444 项接口冒烟 / 127 项点击检查 / 43 个单元测试**；`smoke2` 加 4 条 `/api/setup` 断言（四步、认得已填项、`hidden` 落库、随后复位成 `"0"` 免影响后面的冒烟）。
 - ui-check 新增 `[0]` 场景 6 条（卡在、四步、打勾数 ≥1、有「不再显示」、点了就收、设置里记下 `onboard_hidden=1`）。**这个场景必须排在 `[1] 建学生` 之后**：卡是否显示取决于库里的数据，「有学生没课」时才既显示又打勾。
 - 小坑：`[23]` 那条「设置页有新版本一栏」的断言原来只认「已是最新 / 没查到」，1.8.4 把 404 文案改成「仓库还没公开…」之后它就红了——**断言要跟着文案走**，多认一个「还没公开」。
+
+## 38. 记住上次停在哪一页（1.8.6）
+
+正经常见的软件行为：关了再开，还是上次那一页。这一版在窗口壳里做了（不动网页代码）。
+
+- `launcher/Launcher.cs` 新增 `LastPageFile()` = `<app>\data\lastpage.txt`、`internal static string LoadLastPage()`、`internal static void SaveLastPage(string)`。
+- 网页侧不用改：`AppForm` 订阅 `core.SourceChanged += RememberPage`，从 `core.Source` 里剥掉 `startUrl` 前缀，再砍掉 `?` 和 `#` 后面的部分，**只记路径**（`/students`、`/records` 这种）。
+- 启动时 `core.Navigate(startUrl + startPath)`（原来是 `core.Navigate(startUrl)`）。
+- 三个保护：路径不超过 200 字；`/share/...` 不记（家长只读页不该被记住）；首页 `/` 直接删文件——停在首页等于没记，别留垃圾。
+- **`LoadLastPage` / `SaveLastPage` 必须是 `internal`**：`AppForm` 是另一个类，`private static` 编不过（`error CS0122: …不可访问，因为它具有一定的保护级别`）。
+- 只记路径不记查询串，是因为 `?new=1` 会一开就弹「新建」窗口；这跟 `useAutoNew` 的约定一致。
+- 托盘的「打开主界面」仍然是回到首页（想回去就点它），双击托盘图标只是把窗口叫回来、不改页面。
+
+### 验证基线（1.8.6）
+
+- 网页与接口没改：**444 项接口冒烟 / 127 项点击检查 / 43 个单元测试**沿用 1.8.5 的数字，但仍然照跑一遍。
+- 壳的验证靠 CDP：起 exe 时带 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9455`，`Runtime.evaluate` 读 `location.pathname`、`location.href = "/records"` 换页，`--quit` 之后看 `data\lastpage.txt`，再起一次读回 `location.pathname` 是不是 `/records`。
