@@ -628,3 +628,33 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 
 - 打包版双击 ≈4~6 秒出窗口（标题「课后服务管理」、图标是自己的）；关窗 1.2 秒内 exe + node 全退、端口无监听、`app.db-wal` 归零；`data\window.txt` 记 `WxH+X+Y`，重开同尺寸同位置。
 - 434 项接口冒烟 / 121 项点击检查 / 43 个单元测试。
+
+## 36. 托盘常驻与单实例（1.8.1）
+
+### 行为
+
+- 点右上角的 ×（Alt+F4 一样）**不退出**：窗口 `Hide()` 进托盘，node 服务和 WebView2 都还在跑。第一次会弹一个气泡提示「还在后台运行」。
+- 托盘图标（就是 `public\app.ico`）双击 = 把窗口叫回来；右键四项：打开主界面、打开数据文件夹、立即备份（调 `POST /api/backup` → `makeBackup("manual")`）、退出。
+- 托盘「退出」（或 `AfterSchool.exe --quit`）= 真的关：`allowClose = true` → `Close()` → `Application.Run` 返回 → `SaveWindowSize()` → `POST /api/shutdown`（服务端先备份再 checkpoint）→ `KillChild()`。
+- 单实例：`Mutex("Local\\AfterSchoolShell")`。第二次双击 exe 不再起服务，只把第一个叫到前面。
+
+### 关键决定：用命名事件，不要用窗口消息
+
+第一版是 `FindWindow(null, "课后服务管理")` + `PostMessage(WM_APP+7/+8)`。实测**第二个进程正常退出（exit 0），第一个进程却什么都没发生**——找到的窗口和真正收消息的窗口不是同一个，太难可靠。现在换成：
+
+- `EventWaitHandle(false, EventResetMode.AutoReset, "Local\\AfterSchoolShow" / "Local\\AfterSchoolQuit", out made)`；第二个实例只 `Set()` 一下。
+- 第一个实例 `StartWaiter(f)` 起后台线程 `WaitHandle.WaitAny`，收到就 `f.BeginInvoke(...)` 切回界面线程做 `ShowFromTray()` / `ExitApp()`。
+
+### 坑（都踩过）
+
+1. **`OnFormClosing` 里的 `CloseReason.UserClosing` 拦不住外部 `PostMessage` 的 WM_CLOSE**。实测点 × 之后进程 1 秒内就退了。必须在 `WndProc` 里自己拦：`if (m.Msg == 0x0010 && !allowClose) { HideToTray(); return; }`，`OnFormClosing` 那段留作第二道保险。
+2. **启动画面的标题也叫「课后服务管理」**（`SplashForm`）。写测试脚本抓主窗口时只比标题会抓到启动画面（520×248），然后 `IsWindowVisible=false`、`GetWindowRect` 返回 `?`，全是假象。要再加「宽度 ≥ 900」。
+3. PowerShell 里 `[W]::FindWindow($null, "…")` 传的是**空字符串不是 NULL**，所以永远找不到窗口（C# 里 `null` 才是 NULL）。
+4. **write 工具写 `.ps1` 不带 BOM**，PS5.1 按 GBK 解析中文 → `Unexpected token '绗簩涓繘绋嬮€€鍑?'`。写完统一补一遍：`[System.IO.File]::WriteAllText($p, $t, [System.Text.UTF8Encoding]::new($true))`。
+5. `data\window.txt` 只在 `Application.Run` 返回后写，藏在托盘期间是空的（正常）；`app.db-wal` 运行期会长（几百 KB），退出时才 checkpoint 归零。
+6. 删过 `dist\app\data` 之后第一次启动要重建 `data\webview`（WebView2 配置），实测 **21~39 秒**；之后 4~6 秒。
+
+### 验证基线（1.8.1）
+
+- 438 项接口冒烟 / 121 项点击检查 / 43 个单元测试。
+- 实测：× → 进程活、3210 仍在听、窗口不可见；再双击 exe → 第二进程 0 秒退出、窗口回来、只有 1 个进程；`--quit` → 1 秒内全退、端口关闭、`wal` 0、`window.txt` 有值、`backups` 多一份 auto。

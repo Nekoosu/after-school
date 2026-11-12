@@ -40,8 +40,26 @@ namespace AfterSchool
         static volatile int winX = int.MinValue;
         static volatile int winY = int.MinValue;
 
+        // 单实例：第二次双击 exe 不再开一个窗口，而是把已经在跑的那个叫到前面来
+        static Mutex shellMutex;
+        // 「叫出来」「真退出」用命名事件传递：比 FindWindow + PostMessage 可靠，
+        // 不用去猜窗口标题，也不会抓到同名的辅助窗口。
+        static EventWaitHandle showEvent;
+        static EventWaitHandle quitEvent;
+        internal const int WM_SHELL_SHOW = 0x8000 + 7;   // WM_APP + 7，我们自己约定的「把窗口亮出来」
+        internal const int WM_SHELL_QUIT = 0x8000 + 8;   // WM_APP + 8，「真的退出」（AfterSchool.exe --quit 用）
+
         [DllImport("shcore.dll")]
         static extern int SetProcessDpiAwareness(int value);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        static extern IntPtr FindWindow(string cls, string title);
+
+        [DllImport("user32.dll")]
+        static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr w, IntPtr l);
+
+        [DllImport("user32.dll")]
+        internal static extern bool SetForegroundWindow(IntPtr hWnd);
 
         [DllImport("user32.dll")]
         static extern bool EnumWindows(EnumProc cb, IntPtr lp);
@@ -166,6 +184,22 @@ namespace AfterSchool
                 }
                 Directory.CreateDirectory(dataDir);
                 LoadWindowSize();
+
+                // 第二次双击：不另开窗口，把已经在跑的那个叫到前面来
+                bool firstInstance;
+                shellMutex = new Mutex(true, "Local\\AfterSchoolShell", out firstInstance);
+                bool madeEvent;
+                showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "Local\\AfterSchoolShow", out madeEvent);
+                quitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "Local\\AfterSchoolQuit", out madeEvent);
+                if (!firstInstance)
+                {
+                    bool quit = args.Length > 0 && args[0] == "--quit";
+                    if (ActivateExisting(quit)) return;
+                    MessageBox.Show("课后服务管理已经在运行了，窗口可能还藏在右下角的托盘里：\n" +
+                        "点一下托盘上的「课」图标就能回来。",
+                        "课后服务管理", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
 
                 // 已经有一份在跑：直接开窗口，不再起第二个
                 int running = ReadPortFile();
@@ -482,6 +516,51 @@ namespace AfterSchool
             return null;
         }
 
+        /// <summary>把已经在跑的那个窗口叫出来：它可能最小化了，也可能躲在托盘里。</summary>
+        static bool ActivateExisting(bool quit)
+        {
+            // 只发一个信号就够了：在跑的那份有个后台线程守着这两个事件。
+            // 它可能还在启动画面里，信号会先攒着，等窗口建好再消费。
+            try
+            {
+                if (quit) quitEvent.Set();
+                else showEvent.Set();
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>守着「叫出来 / 真退出」两个事件，收到就转给界面线程去处理。</summary>
+        static void StartWaiter(AppForm f)
+        {
+            Thread t = new Thread(delegate()
+            {
+                WaitHandle[] ws = new WaitHandle[] { showEvent, quitEvent };
+                while (true)
+                {
+                    int which = WaitHandle.WaitAny(ws);
+                    try
+                    {
+                        f.BeginInvoke((Action)delegate
+                        {
+                            if (which == 0) f.ShowFromTray();
+                            else f.ExitApp();
+                        });
+                    }
+                    catch
+                    {
+                        // 窗口已经销毁了（真退出过程中），线程自己收工
+                        return;
+                    }
+                }
+            });
+            t.IsBackground = true;
+            t.Start();
+        }
+
         /// <summary>
         /// 用 WebView2 自己开一个窗口：窗口图标、标题、最小化最大化都是我们自己的，
         /// 任务栏里也不再是浏览器。服务已经是通的，这里只管把界面装进去。
@@ -513,6 +592,7 @@ namespace AfterSchool
                 catch { }
             };
             appForm = f;
+            StartWaiter(f);
             Application.Run(f);
             appForm = null;
         }
@@ -841,13 +921,18 @@ namespace AfterSchool
     {
         readonly string startUrl;
         readonly string dataDir;
+        readonly string dataRoot;
         WebView2 view;
+        NotifyIcon tray;
         bool navigated;
+        bool allowClose;
+        bool trayTipShown;
 
         public AppForm(string url, Icon ico, int w, int h, int x, int y, string webviewDataDir)
         {
             startUrl = url;
             dataDir = webviewDataDir;
+            dataRoot = Path.GetDirectoryName(webviewDataDir);
 
             Text = "课后服务管理";
             if (ico != null) Icon = ico;
@@ -867,6 +952,170 @@ namespace AfterSchool
             Controls.Add(view);
 
             Shown += OnShown;
+            BuildTray(ico);
+        }
+
+        /// <summary>右下角托盘：点一下回来，右键能开数据文件夹、立刻备份、退出。</summary>
+        void BuildTray(Icon ico)
+        {
+            ContextMenuStrip menu = new ContextMenuStrip();
+            try
+            {
+                menu.Font = new Font("Microsoft YaHei UI", 9f);
+            }
+            catch
+            {
+                menu.Font = SystemFonts.MenuFont;
+            }
+
+            ToolStripMenuItem open = new ToolStripMenuItem("打开主界面");
+            open.Font = new Font(menu.Font, FontStyle.Bold);
+            open.Click += delegate { ShowFromTray(); };
+            menu.Items.Add(open);
+
+            ToolStripMenuItem folder = new ToolStripMenuItem("打开数据文件夹");
+            folder.Click += delegate { OpenFolder(); };
+            menu.Items.Add(folder);
+
+            ToolStripMenuItem backup = new ToolStripMenuItem("立即备份");
+            backup.Click += delegate { BackupNow(); };
+            menu.Items.Add(backup);
+
+            menu.Items.Add(new ToolStripSeparator());
+
+            ToolStripMenuItem quit = new ToolStripMenuItem("退出");
+            quit.Click += delegate { ExitApp(); };
+            menu.Items.Add(quit);
+
+            tray = new NotifyIcon();
+            tray.Icon = ico != null ? ico : SystemIcons.Application;
+            tray.Text = "课后服务管理";
+            tray.ContextMenuStrip = menu;
+            tray.DoubleClick += delegate { ShowFromTray(); };
+            tray.Visible = true;
+        }
+
+        /// <summary>从托盘回来：可能是最小化的，也可能是隐藏着的。</summary>
+        public void ShowFromTray()
+        {
+            try
+            {
+                if (!Visible) Show();
+                if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+                Activate();
+                BringToFront();
+                Launcher.SetForegroundWindow(Handle);
+            }
+            catch { }
+        }
+
+        /// <summary>点右上角「×」：收到托盘，服务继续跑着（跟真软件一样），不是退出。</summary>
+        void HideToTray()
+        {
+            Hide();
+            if (!trayTipShown)
+            {
+                trayTipShown = true;
+                Balloon("还在后台运行", "点托盘上的「课」图标回到窗口；右键图标选「退出」才是真的关掉。");
+            }
+        }
+
+        internal void ExitApp()
+        {
+            allowClose = true;
+            try
+            {
+                if (tray != null)
+                {
+                    tray.Visible = false;
+                    tray.Dispose();
+                    tray = null;
+                }
+            }
+            catch { }
+            Close();
+        }
+
+        void Balloon(string title, string text)
+        {
+            try
+            {
+                if (tray != null) tray.ShowBalloonTip(4000, title, text, ToolTipIcon.Info);
+            }
+            catch { }
+        }
+
+        void OpenFolder()
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(dataRoot) && Directory.Exists(dataRoot))
+                {
+                    Process.Start("explorer.exe", "\"" + dataRoot + "\"");
+                }
+            }
+            catch (Exception ex)
+            {
+                Balloon("打不开文件夹", ex.Message);
+            }
+        }
+
+        /// <summary>托盘菜单「立即备份」：请服务端现在存一份快照到 app\backups。</summary>
+        void BackupNow()
+        {
+            try
+            {
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(startUrl + "api/backup");
+                req.Method = "POST";
+                req.Timeout = 20000;
+                req.Proxy = null;
+                req.ContentLength = 0;
+                string body = "";
+                using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
+                using (StreamReader sr = new StreamReader(res.GetResponseStream(), Encoding.UTF8))
+                {
+                    body = sr.ReadToEnd();
+                }
+
+                string name = "";
+                int i = body.IndexOf("\"name\":\"", StringComparison.Ordinal);
+                if (i >= 0)
+                {
+                    int from = i + 8;
+                    int to = body.IndexOf('"', from);
+                    if (to > from) name = body.Substring(from, to - from);
+                }
+                Balloon("已经存了一份备份", string.IsNullOrEmpty(name) ? "在 app\\backups 里。" : name);
+            }
+            catch (Exception ex)
+            {
+                Balloon("备份没成功", ex.Message);
+            }
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            // 第二个实例双击了 exe：不新开窗口，让它把我们叫出来
+            if (m.Msg == Launcher.WM_SHELL_SHOW)
+            {
+                ShowFromTray();
+                return;
+            }
+            // 第二个实例带 --quit：真的退出（走正常的收尾流程：写盘、备份、停服务）
+            if (m.Msg == Launcher.WM_SHELL_QUIT)
+            {
+                ExitApp();
+                return;
+            }
+            // 点右上角的 ×（Alt+F4 也是这条路）：不退出，收进托盘。
+            // 这里必须自己拦 WM_CLOSE：外面用 PostMessage 发 WM_CLOSE 时 CloseReason 不一定是
+            // UserClosing，光靠 OnFormClosing 的判断会漏，应用就真的关了。
+            if (m.Msg == 0x0010 && !allowClose)
+            {
+                HideToTray();
+                return;
+            }
+            base.WndProc(ref m);
         }
 
         async void OnShown(object sender, EventArgs e)
@@ -957,6 +1206,13 @@ namespace AfterSchool
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            // 点 × 只收进托盘；只有托盘菜单里的「退出」才真的关掉
+            if (!allowClose && e.CloseReason == CloseReason.UserClosing)
+            {
+                e.Cancel = true;
+                HideToTray();
+                return;
+            }
             base.OnFormClosing(e);
         }
     }

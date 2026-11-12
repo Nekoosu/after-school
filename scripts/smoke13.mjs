@@ -54,6 +54,14 @@ ok("备份文件名合规", /^(auto|manual)-\d{4}-\d{2}-\d{2}-\d{4}(\d{2})?(-\d+
 const count1 = (await req("/api/backup/list")).body?.files?.length ?? -1;
 ok("新备份进了列表", count1 === count0 + 1, `${count0} → ${count1}`);
 
+const made2 = await post("/api/backup", {});
+ok("POST /api/backup 也能立刻备份", made2.res.status === 200, made2.text.slice(0, 160));
+ok("POST /api/backup 返回文件名", /^(auto|manual)-/.test(made2.body?.name ?? ""), String(made2.body?.name));
+const count1b = (await req("/api/backup/list")).body?.files?.length ?? -1;
+ok("这份也进了列表", count1b === count1 + 1, `${count1} → ${count1b}`);
+const del2 = await del(`/api/backup?file=${encodeURIComponent(made2.body?.name ?? "")}`);
+ok("收拾掉刚做的那份", del2.res.status === 200, del2.text.slice(0, 120));
+
 const dl = await fetch(`${BASE}/api/backup?file=${encodeURIComponent(name)}`);
 ok("删之前能下载", dl.status === 200, String(dl.status));
 

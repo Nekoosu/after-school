@@ -3,10 +3,23 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { sqlite } from "@/db";
-import { backupPath, removeBackup } from "@/lib/backup";
+import { backupPath, makeBackup, removeBackup } from "@/lib/backup";
 import { fail, ok } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * POST /api/backup —— 现在立刻存一份快照到 backups 目录（桌面壳的托盘菜单用它）
+ * 和 GET 现场下载的区别：这个只落在本机，返回文件名，方便在备份列表里看到。
+ */
+export async function POST() {
+  try {
+    const file = await makeBackup("manual");
+    return ok({ ok: true, name: file.name, size: file.size });
+  } catch (e) {
+    return fail(e, 500);
+  }
+}
 
 /**
  * DELETE /api/backup?file=xxx.db —— 删掉一份没用的备份（手动清理）
