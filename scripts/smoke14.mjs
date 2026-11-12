@@ -141,6 +141,28 @@ try {
 }
 ok("/api/update 给出 ok 字段", typeof updJson.ok === "boolean", upd.text.slice(0, 160));
 
+// update_url 走清单：起一个本地假清单服务来当 Gitee raw，验证 /api/update 真的会按设置走
+const http = await import("node:http");
+const manifest = { version: "99.0.0", url: "https://example.com/get", notes: "冒烟清单" };
+const fake = http.createServer((rq, rs) => {
+  rs.setHeader("Content-Type", "application/json; charset=utf-8");
+  rs.end(JSON.stringify(manifest));
+});
+await new Promise((res) => fake.listen(0, "127.0.0.1", res));
+const fakeUrl = `http://127.0.0.1:${fake.address().port}/update.json`;
+await req("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ update_url: fakeUrl }) });
+const upd2 = await req("/api/update");
+ok("update_url 配了就走清单", upd2.body?.ok === true && upd2.body?.latest === "99.0.0", upd2.text.slice(0, 160));
+ok("清单的 notes 带回来", upd2.body?.notes === "冒烟清单", String(upd2.body?.notes));
+ok("有 99.0.0 就算有新版", upd2.body?.hasUpdate === true, String(upd2.body?.hasUpdate));
+// 清单地址写错（不是 JSON）要按「查不到」处理，不许 500
+await req("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ update_url: "http://127.0.0.1:1/no.json" }) });
+const upd3 = await req("/api/update");
+ok("清单打不开也是 200 + ok:false", upd3.res.status === 200 && upd3.body?.ok === false, upd3.text.slice(0, 160));
+// 收尾：清掉测试地址，恢复走 GitHub 的默认行为
+await req("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ update_url: "" }) });
+fake.close();
+
 // 托盘小账：桌面壳托盘菜单第一行就吃这个接口的 text 字段
 const tray = await req("/api/shell/tray");
 ok("/api/shell/tray 永远 200", tray.res.status === 200, String(tray.res.status));

@@ -729,3 +729,19 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 - **别指望自动化按出缩放**：CDP 的 `Input.dispatchMouseEvent`（Ctrl+滚轮）和 `Input.dispatchKeyEvent`（Ctrl+加减号）都只到渲染进程，Chromium 的页面缩放是在浏览器进程里处理的；`SendKeys` 发出去也常落不到 WebView2 的子窗口上（`SetFocus` 只能给同线程窗口，跨进程要先把窗口激活并点一下页面）。
 - 所以这轮的验证改成两条能确定的证据：① 手写 `data\zoom.txt = 1.25` 再启动，CDP 读到 `window.devicePixelRatio = 1.25`（说明读回来并真的应用了）；② 带着 1.25 启动再 `--quit`，文件仍是 `1.25`（说明退出时读到的 `view.ZoomFactor` 就是 1.25，`SaveZoom` 的入参正确），比例是 1 时退出会把文件删掉。
 - `OnFormClosing` 里补一次 `Launcher.SaveZoom((float)view.ZoomFactor)` 兜底：`ZoomFactorChanged` 在某些输入路径下不触发。
+
+## 40. 版本清单：不开源也能查更新（1.8.8）
+
+- 背景：仓库是私有的，`api.github.com/.../releases/latest` 匿名请求 404，所以 1.8.4 加的「启动查新版本」对别人一直查不到。1.8.8 加了第二个来源：**设置里的 `update_url` 指向一份公开 JSON 清单**。
+- 接口 `src/app/api/update/route.ts` 的分支顺序就是规则：
+  1. `update_url` 非空 → **只认它**（`checkManifest()`）；
+  2. 空 → 退回 GitHub `releases/latest`（原来的逻辑，404 文案不变）。
+- 清单格式（仓库根目录 `update.json` 是模板，**不要跟 `app` 一起打包**，它属于「发到哪里都行」的发布物）：
+  ```json
+  { "version": "1.8.8", "url": "https://…", "notes": "这版改了什么", "publishedAt": "2026-11-12" }
+  ```
+  也容忍 `tag_name` / `latest` / `download` / `published_at` 这些别名，别人手写不至于直接失败。
+- 失败一律 `ok:false` + 人话原因：地址不是 http(s)、HTTP 非 2xx（「清单可能还没传上去」）、6 秒超时、**返回的不是 JSON（最常见：填了网页地址而不是 raw 链接）**、清单里没 `version`。这些都不能抛 500，设置页要把原因显示出来。
+- 设置页「关于」：`检查更新` 按钮重新打一次接口（`checkNow()`），`检查地址` 输入框绑 `update_url`，走既有的「保存设置」流程（`save()` 里加了 `update_url` 一项，**加新键必须同时改这里**）。`update.notes` 有值就显示一行。
+- 桌面壳那边不用改：托盘查新用的是同一个 `api/update`，只认字符串 `"hasUpdate":true`。
+- 冒烟 `scripts/smoke14.mjs` 用 `node:http` 起一个本地假清单服务当 Gitee raw（`fake.listen(0)` 拿随机端口），断言：配了地址就走清单且 `latest` 等于假清单里的值、`notes` 带回来、`hasUpdate` 为真、地址打不开仍是 200 + `ok:false`，最后 PATCH 回空串。基线 448 / 128 / 43。

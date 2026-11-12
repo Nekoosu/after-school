@@ -719,6 +719,20 @@ async function main() {
         /有 \d+\.\d+\.\d+ 可用/.test(aboutText));
     ok("设置页「关于」里有新版本一栏", hasUpdateRow, hasUpdateRow ? "ok" : "缺少新版本一栏");
 
+    // 检查更新按钮与「检查地址」输入框（1.8.8：可以改走自己的公开清单）
+    const updUi = JSON.parse(
+      String(
+        await evalJS(`const b = Array.from(document.querySelectorAll("button")).find(x => x.textContent.includes("检查更新"));
+          const inp = Array.from(document.querySelectorAll("input")).find(x => (x.placeholder || "") === "留空 = 用 GitHub");
+          return JSON.stringify({ btn: !!b, input: !!inp, label: document.body.innerText.includes("检查地址") });`),
+      ),
+    );
+    ok(
+      "设置页有「检查更新」按钮和「检查地址」输入框",
+      updUi.btn === true && updUi.input === true && updUi.label === true,
+      JSON.stringify(updUi),
+    );
+
     console.log("\n[24] 标题栏一体、当前项竖条、手机抽屉");
     await goto("/calendar", "");
     await sleep(900);

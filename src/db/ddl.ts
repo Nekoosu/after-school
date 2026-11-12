@@ -221,5 +221,6 @@ INSERT OR IGNORE INTO setting (key, value) VALUES
   ('ai_model', 'deepseek-chat'),
   ('ai_key', ''),
   ('api_token', ''),
-  ('feedback_tone', 'plain');
+  ('feedback_tone', 'plain'),
+  ('update_url', '');
 `;

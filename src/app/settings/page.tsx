@@ -70,9 +70,12 @@ export default function SettingsPage() {
     ok: boolean;
     latest?: string | null;
     hasUpdate?: boolean;
-    url?: string;
+    url?: string | null;
     error?: string;
+    source?: string;
+    notes?: string | null;
   } | null>(null);
+  const [checking, setChecking] = useState(false);
   const [restoreFile, setRestoreFile] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [delFile, setDelFile] = useState<string | null>(null);
@@ -164,6 +167,18 @@ export default function SettingsPage() {
     }
   }
 
+  /** 「检查更新」按钮：重新打一次 /api/update（存过新地址后先保存再点） */
+  async function checkNow() {
+    setChecking(true);
+    try {
+      setUpdate(await fetch("/api/update").then((r) => r.json()));
+    } catch {
+      setUpdate({ ok: false, error: "没查到（可能没联网）" });
+    } finally {
+      setChecking(false);
+    }
+  }
+
   async function doRestore() {
     if (!restoreFile) return;
     setRestoring(true);
@@ -242,6 +257,7 @@ export default function SettingsPage() {
         ai_model: s.ai_model ?? "",
         ai_key: s.ai_key ?? "",
         feedback_tone: s.feedback_tone ?? "plain",
+        update_url: s.update_url ?? "",
       });
       toast.ok("设置已保存");
       setDirty(false);
@@ -699,23 +715,45 @@ export default function SettingsPage() {
                   </div>
                   <div className="row between">
                     <span className="muted">新版本</span>
-                    {/* 只显示：有新版给按钮；查到但没新版说一句；查不到（404/限流/断网）把原因带出来 */}
-                    {update?.ok && update.hasUpdate ? (
-                      <a
-                        className="btn btn-sm btn-primary"
-                        href={update.url}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        有 {update.latest} 可用
-                        <Icon name="external" size={13} />
-                      </a>
-                    ) : (
-                      <span className="fs-sm muted">
-                        {update?.ok ? "已是最新" : (update?.error || "没查到（可能没联网）")}
-                      </span>
-                    )}
+                    {/* 有新版给按钮；查到但没新版说一句；查不到（404/限流/断网）把原因带出来 */}
+                    <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                      {update?.ok && update.hasUpdate ? (
+                        <a
+                          className="btn btn-sm btn-primary"
+                          href={update.url || "#"}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          有 {update.latest} 可用
+                          <Icon name="external" size={13} />
+                        </a>
+                      ) : (
+                        <span className="fs-sm muted">
+                          {update?.ok ? "已是最新" : (update?.error || "没查到（可能没联网）")}
+                        </span>
+                      )}
+                      <button className="btn btn-sm" onClick={checkNow} disabled={checking}>
+                        <Icon name="refresh" size={13} />
+                        {checking ? "查找中…" : "检查更新"}
+                      </button>
+                    </div>
                   </div>
+                  {/* 清单里写了说明就显一行 */}
+                  {update?.ok && update.notes ? (
+                    <div className="fs-sm muted">{update.notes}</div>
+                  ) : null}
+                  {/* 检查地址：留空走 GitHub，填了就走自己的公开清单（Gitee raw 之类） */}
+                  <Field
+                    label="检查地址"
+                    hint="留空 = 用 GitHub 的发布页；填公开清单的 raw 地址（Gitee 仓库里的 update.json）就走清单，国内也能查到。改完点上面的「保存设置」，再点「检查更新」。"
+                  >
+                    <input
+                      className="input mono fs-sm"
+                      value={s.update_url ?? ""}
+                      onChange={(e) => set("update_url", e.target.value)}
+                      placeholder="留空 = 用 GitHub"
+                    />
+                  </Field>
                   <div className="row between">
                     <span className="muted">数据文件</span>
                     <span className="mono fs-sm">app\data\app.db</span>
