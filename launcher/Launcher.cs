@@ -1012,12 +1012,14 @@ namespace AfterSchool
         NotifyIcon tray;
         ToolStripMenuItem trayInfo;
         ToolStripMenuItem trayUpdate;
+        ToolStripMenuItem trayPending;
         string updateUrl = "";
         string lastSaved = "";
         bool navigated;
         bool allowClose;
         bool trayTipShown;
         bool updateChecked;
+        bool triedHome;
 
         public AppForm(string url, Icon ico, int w, int h, int x, int y, string webviewDataDir)
         {
@@ -1116,6 +1118,17 @@ namespace AfterSchool
             menu.Items.Add(status);
             trayInfo = status;
             menu.Opening += delegate { RefreshTrayInfo(); };
+
+            // 「去记这一节」：最早一节该记还没记的课，点一下直接进那一节的记一笔
+            ToolStripMenuItem pending = new ToolStripMenuItem("去记这一节");
+            pending.Visible = false;
+            pending.Click += delegate
+            {
+                int id = pending.Tag is int ? (int)pending.Tag : 0;
+                if (id > 0) OpenLesson(id);
+            };
+            menu.Items.Add(pending);
+            trayPending = pending;
 
             ToolStripMenuItem folder = new ToolStripMenuItem("打开数据文件夹");
             folder.Click += delegate { OpenFolder(); };
@@ -1289,11 +1302,77 @@ namespace AfterSchool
                 }
                 string text = PickString(body, "text");
                 trayInfo.Text = text.Length > 0 ? text : "服务还没就绪";
+
+                if (trayPending != null)
+                {
+                    int pid = PickInt(body, "pendingId");
+                    string ptext = PickString(body, "pendingText");
+                    if (pid > 0)
+                    {
+                        trayPending.Text = ptext.Length > 0 ? "去记：" + ptext : "去记这一节";
+                        trayPending.Tag = pid;
+                        trayPending.Visible = true;
+                    }
+                    else
+                    {
+                        trayPending.Visible = false;
+                        trayPending.Tag = 0;
+                    }
+                }
             }
             catch
             {
                 trayInfo.Text = "服务不在跑";
+                if (trayPending != null) trayPending.Visible = false;
             }
+        }
+
+        /// <summary>页面彻底打不开时给的一页说明（不白屏，能点重试）。</summary>
+        static string ErrorPage(string why)
+        {
+            return "<!doctype html><meta charset=\"utf-8\"><title>课后服务管理</title>" +
+                "<style>html,body{height:100%;margin:0;font:15px/1.7 'Microsoft YaHei UI','Microsoft YaHei',sans-serif;" +
+                "background:#f6f8fc;color:#1f2937;display:flex;align-items:center;justify-content:center}" +
+                ".box{max-width:520px;padding:34px 38px;background:#fff;border:1px solid #e4e8f0;border-radius:16px;" +
+                "box-shadow:0 12px 34px rgba(22,32,58,.08)}h1{font-size:19px;margin:0 0 10px}p{margin:0 0 8px;color:#55617a}" +
+                "code{background:#f1f4fa;padding:1px 6px;border-radius:5px;font-size:13px}" +
+                "button{margin-top:16px;padding:9px 20px;border:0;border-radius:9px;background:#2563eb;color:#fff;" +
+                "font-size:14px;cursor:pointer}button:hover{background:#1d4ed8}" +
+                "@media (prefers-color-scheme:dark){html,body{background:#0e1116;color:#eef2fb}.box{background:#161a21;" +
+                "border-color:#252b36}p{color:#9aa6bd}code{background:#1d222b}button{background:#3b82f6}}</style>" +
+                "<div class=\"box\"><h1>后台服务还没起来</h1>" +
+                "<p>窗口能开，但页面打不开（" + why + "）。一般是服务刚启动还没热，或者端口被别的程序占了。</p>" +
+                "<p>先点下面的「重试」；还不行就关掉软件重开一次，或者看看 <code>app\\data\\server.log</code>。</p>" +
+                "<button onclick=\"try{window.chrome.webview.postMessage('as-reload')}catch(e){location.reload()}\">重试</button></div>";
+        }
+
+        /// <summary>托盘里点「去记这一节」：先亮出窗口，再走到那一节的记一笔页面。</summary>
+        void OpenLesson(int id)
+        {
+            ShowFromTray();
+            try
+            {
+                if (view != null && view.CoreWebView2 != null)
+                {
+                    view.CoreWebView2.Navigate(startUrl + "lessons/" + id);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>从 JSON 里抠一个整数字段（<c>"pendingId":12</c>）。</summary>
+        static int PickInt(string json, string key)
+        {
+            if (string.IsNullOrEmpty(json)) return 0;
+            int k = json.IndexOf("\"" + key + "\":");
+            if (k < 0) return 0;
+            k += key.Length + 3;
+            while (k < json.Length && json[k] == ' ') k++;
+            int start = k;
+            while (k < json.Length && json[k] >= '0' && json[k] <= '9') k++;
+            if (k == start) return 0;
+            int value;
+            return int.TryParse(json.Substring(start, k - start), out value) ? value : 0;
         }
 
         /// <summary>从 JSON 里抠一个字符串字段（C# 5 没有 JSON 库，服务端也不转义中文，够用）。</summary>
@@ -1469,6 +1548,17 @@ namespace AfterSchool
                     string msg = "";
                     try { msg = a.TryGetWebMessageAsString(); } catch { }
                     if (msg == "as-print") DoPrint(core);
+                    if (msg == "as-reload")
+                    {
+                        try { core.Navigate(startUrl); } catch { }
+                    }
+                    // 页面名由网页自己报过来。不能靠 document.title：
+                    // Next 的 metadata 会在流式渲染收尾时把 <title> 再写一遍，把页面名盖掉。
+                    if (msg != null && msg.StartsWith("as-page:"))
+                    {
+                        string n = msg.Substring(8);
+                        Text = string.IsNullOrEmpty(n) ? "课后服务管理" : n + " · 课后服务管理";
+                    }
                 };
 
                 // 页面里的外链（比如 GitHub）用系统默认浏览器打开，别在软件里跳走
@@ -1480,6 +1570,25 @@ namespace AfterSchool
 
                 core.NavigationCompleted += delegate(object s, CoreWebView2NavigationCompletedEventArgs a)
                 {
+                    if (!a.IsSuccess)
+                    {
+                        // 上次那一页已经不在了、或者服务刚起来还没热：先回首页，再不行给一页说明
+                        if (!triedHome && !string.IsNullOrEmpty(startPath) && startPath != "/")
+                        {
+                            triedHome = true;
+                            try { core.Navigate(startUrl); return; }
+                            catch { }
+                        }
+                        if (!navigated)
+                        {
+                            navigated = true;
+                            view.Visible = true;
+                        }
+                        try { view.NavigateToString(ErrorPage(a.WebErrorStatus.ToString())); }
+                        catch { }
+                        return;
+                    }
+
                     if (!navigated)
                     {
                         navigated = true;
@@ -1491,6 +1600,11 @@ namespace AfterSchool
                         }
                     }
                 };
+
+                // 窗口标题跟着当前页面走（Alt+Tab、任务栏上就能看出停在哪一页）。
+                // 不用 DocumentTitleChanged：页面的 document.title 会被 Next 的 metadata
+                // 在流式渲染收尾时重写回「课后服务管理」，标题会闪一下又变回去。
+                // 改由网页在换页时 postMessage("as-page:<页面名>")，见上面的 WebMessageReceived。
 
                 // 关了再开，还停在上次那一页（像正经软件那样）
                 core.SourceChanged += RememberPage;

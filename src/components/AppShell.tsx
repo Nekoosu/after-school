@@ -31,6 +31,16 @@ function isShell(): boolean {
   return window.matchMedia?.("(display-mode: standalone)").matches ?? false;
 }
 
+/** 跟桌面壳说一句话（壳在 WebMessageReceived 里接）：as-page:<页面名> 用来改窗口标题 */
+function postToShell(message: string) {
+  const w = window as unknown as { chrome?: { webview?: { postMessage?: (m: string) => void } } };
+  try {
+    w.chrome?.webview?.postMessage?.(message);
+  } catch {
+    /* 壳不在（浏览器里打开）就算了 */
+  }
+}
+
 const SHORTCUTS: Array<{ keys: string; what: string }> = [
   { keys: "Ctrl+K", what: "全局搜索：学生、课程、教案、上课记录" },
   { keys: "Ctrl+N", what: "排一节课（跳到课表并打开新建）" },
@@ -165,10 +175,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     setNavOpen(false);
     setSearchOpen(false);
     setHelpOpen(false);
-    // 标题跟着页面走：浏览器标签、任务栏、任务视图里都能认出是哪一页；
-    // 桌面壳（Edge 的 --app 窗口）里只要软件名，别把页面名塞进窗口标题，看着才像软件。
-    const inShell = isShell();
-    document.title = inShell ? "课后服务管理" : `${titleOf(pathname)} · 课后服务管理`;
+    // 标题跟着页面走：浏览器标签、任务栏、任务视图里都能认出是哪一页。
+    // 1.8.12 起桌面壳的窗口标题也照抄这里（DocumentTitleChanged），
+    // 所以壳里同样带上页面名——Alt+Tab 一眼能看出停在哪一页。
+    document.title = `${titleOf(pathname)} · 课后服务管理`;
+    // 桌面壳的窗口标题靠这一句（壳里 document.title 会被 Next 的 metadata 盖回「课后服务管理」）
+    if (isShell()) postToShell(`as-page:${titleOf(pathname)}`);
   }, [pathname]);
 
   // 桌面壳里把「网页感」收掉：右键菜单、双击选词、拖图片一律不响应（输入框和手册正文除外）

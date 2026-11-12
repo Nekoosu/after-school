@@ -176,6 +176,9 @@ try {
 }
 ok("/api/shell/tray 给出 text 一句话", typeof trayJson.text === "string" && trayJson.text.length > 0, tray.text.slice(0, 160));
 ok("/api/shell/tray 的数字字段都在", typeof trayJson.todayLessons === "number" && typeof trayJson.lowBalance === "number" && typeof trayJson.needRecord === "number", tray.text.slice(0, 160));
+// 1.8.12：托盘那句小账带上第一节时间，菜单里多一条「去记这一节」
+ok("/api/shell/tray 给出第一节时间", typeof trayJson.first === "string" && (trayJson.first === "" || /^\d\d:\d\d$/.test(trayJson.first)), String(trayJson.first));
+ok("/api/shell/tray 给出待记那一节", typeof trayJson.pendingId === "number" && typeof trayJson.pendingText === "string" && (trayJson.pendingId === 0 || trayJson.pendingText.length > 0), trayJson.pendingId + " / " + String(trayJson.pendingText));
 
 // 清理
 await del(`/api/lessons/${copied?.id}`);

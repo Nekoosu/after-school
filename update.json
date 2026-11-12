@@ -1,6 +1,6 @@
 {
-  "version": "1.8.11",
-  "url": "https://github.com/Nekoosu/after-school/releases/download/v1.8.11/after-school-1.8.11.zip",
-  "notes": "Ctrl+N 排一节课、Ctrl+Shift+N 加学生；有活儿在跑时顶上一条细进度条。",
+  "version": "1.8.12",
+  "url": "https://github.com/Nekoosu/after-school/releases/download/v1.8.12/after-school-1.8.12.zip",
+  "notes": "窗口标题跟着当前页面走；托盘里能直接跳去补记那一节；页面打不开时不再白屏。",
   "publishedAt": "2026-11-12"
 }
