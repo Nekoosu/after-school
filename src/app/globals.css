@@ -4966,3 +4966,23 @@ html {
     width: 100%;
   }
 }
+
+/* 授权提醒条（1.8.13）：试用还剩几天 / 未激活。跟着主题走，深色下同套 token */
+.license-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 18px;
+  font-size: 13px;
+  color: var(--warn-ink, #7a4a0d);
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 32%, var(--line));
+}
+.license-bar.bad {
+  color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 12%, var(--surface));
+  border-bottom-color: color-mix(in srgb, var(--bad) 30%, var(--line));
+}
+.license-bar svg {
+  flex: 0 0 auto;
+}

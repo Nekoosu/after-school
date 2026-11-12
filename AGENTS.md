@@ -793,3 +793,17 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 - **页面打不开不再白屏**：`NavigationCompleted` 里判 `a.IsSuccess`。失败先看是不是「上次那一页已经不在了」——`startPath` 不是 `/` 且还没试过，就 `Navigate(startUrl)` 回首页（`triedHome` 保证只试一次）；还失败就把窗口显出来，用 `view.NavigateToString(ErrorPage(...))` 显示一页说明（浅色/深色跟随系统，带「重试」按钮），按钮走 `postMessage('as-reload')` → 壳里 `core.Navigate(startUrl)`。`ErrorPage` 里所有的引号都要转义，别在 C# 字符串里直接写 `"`。
 - **怎么验**：① 标题——预置 `app\data\lastpage.txt=/records` 启动，用 CDP（`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9465`，**要轮询** `/json/list`，连早了是 ECONNREFUSED；连上后 `location.pathname` 先是 `"blank"`，也要轮询）确认页面，再用 Win32 `GetWindowText`（按 pid `EnumWindows`）读窗口标题，应为「上课记录 · 课后服务管理」；跳到别的页再读一次。`document.title` 是纯「课后服务管理」是正常的（见上一条）。② 回退——把 `lastpage.txt` 写成 `/nope-404`，启动后最终 URL 应是 `/`；③ 托盘——`GET /api/shell/tray` 里 `pendingId > 0` 且 `pendingText` 有内容（先建一节过去的课），菜单文字靠人工看一眼即可（Automation 点托盘菜单成本太高）。
 - **基线（1.8.12）**：冒烟 **451**、ui-check **133**、单测 **43**、`dist\AfterSchool.exe` 51,712 字节。
+## 45. 授权与试用（1.8.13）
+
+一次一码、买断、离线可用：**试用 7 天 → 到期弹激活窗 → 粘 `AS1.` 开头的 RSA 签名码 → 激活后不再需要网络**。
+
+- **三处要一起看**：`src/lib/license.ts`（验签与状态）、`src/middleware.ts`（数据闸门）、`launcher/Launcher.cs`（算机器码、算闸门口令、激活窗）。
+- CDK 格式：`AS1.<base64url(payload)>.<base64url(sig)>`，payload 是 `v1|机器码1[,机器码2]|有效天数(0=永久)|YYYY-MM-DD`，用 `crypto.verify("RSA-SHA256", …)` 验。私钥只在 `.keys\cdk-private.pem`（`.gitignore` 里，**绝不能进仓库或安装包**），公钥硬编码在 `src/lib/license.ts` 的 `PUBLIC_PEM`。
+- 发码：`node scripts\make-cdk.mjs <16位机器码>`。`.mjs` 是 ESM，脚本里只能 `import`，写 `require` 会报 `ReferenceError: require is not defined in ES module scope`。
+- **机器码**：`MachineGuid + 电脑名 + "|after-school"` 的 SHA256 前 16 位 hex，由壳算好，经环境变量 `AS_MACHINE` 传给 next 子进程；浏览器直连没有这个变量，所以 `licenseState()` 直接返回 `locked`（**不碰任何文件**）。
+- **数据闸门**：壳每次启动随机 16 字节 → `AS_GATE`（32 位 hex），同时用 `AddScriptToExecuteOnDocumentCreatedAsync` 往页面写 `document.cookie='as_gate=…'`；`src/middleware.ts` 只拦 `/api/*`，白名单是 `health/license/update/share/share·link/calendar.ics`。**`AS_GATE` 为空就整体放行**——命令行起服务、冒烟、ui-check 全靠这条，别改成「默认拒绝」，否则本地开发全挂。
+- **`experimental.nodeMiddleware` 在 next 15.5.29 不支持**（`tsc` 会报 `TS2353 … 'nodeMiddleware' does not exist in type 'ExperimentalConfig'`），所以 middleware 是 edge 运行时；实测**能读到运行时注入的 `AS_GATE`**（edge 只在构建期绑定静态常量，`process.env` 是运行时读的）。
+- **C# 跨类访问**：`AppForm` 里用 `Launcher.gate` 必须①字段声明 `internal static`、②使用处写全名，只改一处仍报 `CS0103`。
+- 试用记录写 `data\trial.json`（`{start, seen, sig}`，`sig = HMAC(TRIAL_SECRET, machine + start + seen)`）：删文件就重新给 7 天（本地校验挡不住「删文件重置」，这是买断制下能接受的口子）；`now < seen - 30min` 视为时间回拨，按 `seen` 算，防「把系统时间调回去」。`data\license.json` 与 `data\trial.json` 都在 `.gitignore` 里。
+- 验证：**`Invoke-WebRequest -Headers @{Cookie=…}` 不会发 Cookie**，验 Cookie 那条要用 `curl.exe -H "Cookie: as_gate=…"`；闸门手工验法见 §45 上文（无凭证 403、带 `x-as-gate` 或 Cookie 200）。
+- **基线（1.8.13）**：冒烟 **454**、ui-check **133**、单测 **43**。

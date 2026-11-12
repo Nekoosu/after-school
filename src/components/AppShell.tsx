@@ -170,6 +170,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [themeReady, setThemeReady] = useState(false);
   // 有请求在飞时顶上一条细进度条：本地库里多数查询几十毫秒，但导出、月报这种会慢
   const [busy, setBusy] = useState(false);
+  // 授权横幅：试用还剩几天 / 已锁。激活本身在桌面壳的「激活」窗口里做，这里只提醒。
+  const [lic, setLic] = useState<{ mode: "licensed" | "trial" | "locked"; daysLeft: number | null } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/license", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setLic(d))
+      .catch(() => setLic(null));
+  }, []);
 
   useEffect(() => {
     setNavOpen(false);
@@ -490,6 +499,17 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <div className="main">
         <div className={cn("busybar", busy && "on")} aria-hidden="true" />
+        {/* 试用/未激活的提醒条（1.8.13）：正常激活后整条不出现 */}
+        {lic && lic.mode !== "licensed" ? (
+          <div className={cn("license-bar", lic.mode === "locked" && "bad")}>
+            <Icon name="clock" size={14} />
+            <span>
+              {lic.mode === "trial"
+                ? `试用版：还剩 ${lic.daysLeft ?? 0} 天。到期后在桌面程序的「激活」窗口里填激活码。`
+                : "这台电脑还没激活：请用桌面程序打开，在「激活」窗口里填激活码。"}
+            </span>
+          </div>
+        ) : null}
         <header className="topbar">
           {/* 展开时「收起」只在侧栏底部那一个；收起后（或手机上）这个按钮才是回来的路 */}
           {narrow || collapsed ? (

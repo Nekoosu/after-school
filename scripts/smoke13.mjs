@@ -141,7 +141,13 @@ ok("本月到课 1 节", month.attended === 1, String(month.attended));
 ok("本月请假 0", month.leave === 0, String(month.leave));
 ok("本月缺勤 0", month.absent === 0, String(month.absent));
 ok("本月消耗 90 分钟", month.billedMinutes === 90, String(month.billedMinutes));
-ok("下次上课能查到（今天晚上的课）", data.body?.next?.id === futureId, JSON.stringify(data.body?.next));
+// 过了 23:30 再跑这套冒烟，「今晚这一节」其实已经是过去式，next 本来就该是空的
+const futureIsPast = new Date(`${todayStr}T23:30:00`).getTime() < Date.now();
+ok(
+  "下次上课能查到（今天晚上的课）",
+  futureIsPast ? !data.body?.next || data.body?.next?.id === futureId : data.body?.next?.id === futureId,
+  JSON.stringify(data.body?.next)
+);
 
 const other = await post("/api/students", { name: `${tag}别人家` });
 const otherLink = await req(`/api/share/link?id=${other.body?.id}`);

@@ -7,6 +7,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
@@ -42,6 +43,82 @@ namespace AfterSchool
         static volatile int winY = int.MinValue;
         // 上次是不是最大化着关的：window.txt 前面加个 M 记着，回来还是最大化
         static volatile bool winMax;
+
+        // 1.8.13 授权：机器码由壳算（网页侧只认壳给的 AS_MACHINE），
+        // 闸门值随机生成后塞进 AS_GATE，网页用它挡住「浏览器直连」。
+        // internal：AppForm.OnShown 里要把 gate 塞进页面 Cookie，得跨类访问。
+        internal static string machine = "";
+        internal static string gate = "";
+        static bool licensed;
+        static int trialDays;
+
+        /// <summary>机器码：MachineGuid + 计算机名 的 SHA256 前 16 位，换机就变。</summary>
+        static string MachineHash()
+        {
+            string g = "";
+            try
+            {
+                object v = Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Cryptography", "MachineGuid", "");
+                if (v != null) g = v.ToString();
+            }
+            catch { }
+            if (string.IsNullOrEmpty(g)) g = Environment.MachineName;
+            using (SHA256 sha = SHA256.Create())
+            {
+                byte[] b = sha.ComputeHash(Encoding.UTF8.GetBytes(g + "|" + Environment.MachineName + "|after-school"));
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < b.Length; i++) sb.Append(b[i].ToString("x2"));
+                return sb.ToString(0, 16);
+            }
+        }
+
+        /// <summary>问服务端现在的授权状态：licensed? / 试用还剩几天。</summary>
+        static void ReadLicense()
+        {
+            licensed = false;
+            trialDays = 0;
+            try
+            {
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + port.ToString() + "/api/license");
+                req.Timeout = 4000;
+                req.Proxy = null;
+                using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
+                {
+                    using (StreamReader sr = new StreamReader(res.GetResponseStream(), Encoding.UTF8))
+                    {
+                        string body = sr.ReadToEnd();
+                        licensed = body.IndexOf("\"mode\":\"licensed\"") >= 0;
+                        string key = "\"daysLeft\":";
+                        int i = body.IndexOf(key);
+                        if (i >= 0)
+                        {
+                            int j = i + key.Length;
+                            int k = j;
+                            while (k < body.Length && (char.IsDigit(body[k]) || body[k] == '-')) k++;
+                            int d;
+                            if (int.TryParse(body.Substring(j, k - j), out d)) trialDays = d;
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>没激活、试用也过期了，就弹激活窗口；用户直接关掉就退出，不给白用。</summary>
+        static bool EnsureLicensed()
+        {
+            ReadLicense();
+            if (licensed || trialDays > 0) return true;
+
+            // 服务没起来 / 状态读不到（比如老版本服务）时，别把人挡在外面
+            if (!licensed && trialDays == 0 && !Health(port)) return true;
+
+            using (ActivateForm f = new ActivateForm(machine, port))
+            {
+                if (f.ShowDialog() == DialogResult.OK) return true;
+            }
+            return false;
+        }
 
         // 单实例：第二次双击 exe 不再开一个窗口，而是把已经在跑的那个叫到前面来
         static Mutex shellMutex;
@@ -220,6 +297,15 @@ namespace AfterSchool
                     return;
                 }
 
+                // 1.8.13：机器码 + 数据闸门。机器码给网页侧验激活码用，
+                // 闸门值随机生成，只有壳注入到页面 Cookie 里——浏览器直连拿不到数据。
+                machine = MachineHash();
+                byte[] gb = new byte[16];
+                using (RNGCryptoServiceProvider rng = new RNGCryptoServiceProvider()) { rng.GetBytes(gb); }
+                StringBuilder gs = new StringBuilder();
+                for (int i = 0; i < gb.Length; i++) gs.Append(gb[i].ToString("x2"));
+                gate = gs.ToString();
+
                 StartServer();
                 Thread t = new Thread(new ThreadStart(WaitReady));
                 t.IsBackground = true;
@@ -228,6 +314,14 @@ namespace AfterSchool
                 ShowSplash();
                 if (!ready)
                 {
+                    KillChild();
+                    return;
+                }
+
+                // 试用过期 / 没激活：先弹激活窗口；直接关掉就等于退出
+                if (!EnsureLicensed())
+                {
+                    ShutdownServer();
                     KillChild();
                     return;
                 }
@@ -482,6 +576,9 @@ namespace AfterSchool
             psi.EnvironmentVariables["NEXT_TELEMETRY_DISABLED"] = "1";
             // 告诉服务端「你是被桌面启动器拉起来的」：关窗口时它才允许 /api/shutdown 自停
             psi.EnvironmentVariables["AS_LAUNCHED"] = "1";
+            // 1.8.13 授权：机器码（网页侧验 CDK / 算试用）与闸门值（/api/* 只认这个）
+            if (!string.IsNullOrEmpty(machine)) psi.EnvironmentVariables["AS_MACHINE"] = machine;
+            if (!string.IsNullOrEmpty(gate)) psi.EnvironmentVariables["AS_GATE"] = gate;
 
             child = new Process();
             child.StartInfo = psi;
@@ -692,6 +789,8 @@ namespace AfterSchool
                 req.Timeout = 3000;
                 req.Proxy = null;
                 req.ContentLength = 0;
+                // 1.8.13 数据闸门：壳自己调的接口也带上闸门值，不然关窗时的收尾请求会被 403 挡掉
+                req.Headers.Add("x-as-gate", gate);
                 using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
                 {
                     res.Close();
@@ -1294,6 +1393,7 @@ namespace AfterSchool
                 HttpWebRequest req = (HttpWebRequest)WebRequest.Create(startUrl + "api/shell/tray");
                 req.Timeout = 3000;
                 req.Proxy = null;
+                req.Headers.Add("x-as-gate", Launcher.gate);
                 string body = "";
                 using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
                 using (StreamReader sr = new StreamReader(res.GetResponseStream(), Encoding.UTF8))
@@ -1452,6 +1552,7 @@ namespace AfterSchool
                 req.Timeout = 20000;
                 req.Proxy = null;
                 req.ContentLength = 0;
+                req.Headers.Add("x-as-gate", Launcher.gate);
                 string body = "";
                 using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
                 using (StreamReader sr = new StreamReader(res.GetResponseStream(), Encoding.UTF8))
@@ -1542,6 +1643,14 @@ namespace AfterSchool
                     "  }" +
                     "}, true);";
                 await core.AddScriptToExecuteOnDocumentCreatedAsync(printBridge);
+
+                // 1.8.13 数据闸门：页面里发出去的每个请求（fetch / RSC / 导航）都带这个 Cookie，
+                // 服务端 middleware 只认它；浏览器直连就没有，所以拿不到数据。
+                if (!string.IsNullOrEmpty(Launcher.gate))
+                {
+                    string gateScript = "try{document.cookie='as_gate=" + Launcher.gate + "; Path=/; SameSite=Strict';}catch(e){}";
+                    await core.AddScriptToExecuteOnDocumentCreatedAsync(gateScript);
+                }
 
                 core.WebMessageReceived += delegate(object s, CoreWebView2WebMessageReceivedEventArgs a)
                 {
@@ -1675,6 +1784,226 @@ namespace AfterSchool
             try { if (view != null && view.CoreWebView2 != null) Launcher.SaveZoom((float)view.ZoomFactor); }
             catch { }
             base.OnFormClosing(e);
+        }
+    }
+
+    /// <summary>
+    /// 激活窗口（1.8.13）：试用过期后出现——上面是机器码（可复制），下面是激活码输入框。
+    /// 校验全部走本地服务 /api/license（Node 那边用内置公钥验 RSA 签名），私钥不在安装包里。
+    /// C# 5：不用 $"..."、nameof、?.。
+    /// </summary>
+    class ActivateForm : Form
+    {
+        string machine;
+        int port;
+        TextBox box;
+        Label status;
+
+        static readonly Color Ink = Color.FromArgb(23, 30, 43);
+        static readonly Color Muted = Color.FromArgb(104, 117, 140);
+        static readonly Color Brand = Color.FromArgb(37, 99, 235);
+        static readonly Color Bg = Color.FromArgb(246, 248, 252);
+
+        public ActivateForm(string machineHash, int p)
+        {
+            machine = machineHash;
+            port = p;
+
+            Text = "激活 · 课后服务管理";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            StartPosition = FormStartPosition.CenterScreen;
+            ClientSize = new Size(560, 400);
+            BackColor = Bg;
+            Font = new Font("Microsoft YaHei UI", 9f);
+
+            Label title = new Label();
+            title.Text = "这台电脑还没激活";
+            title.Font = new Font("Microsoft YaHei UI", 15f, FontStyle.Bold);
+            title.ForeColor = Ink;
+            title.AutoSize = true;
+            title.Location = new Point(28, 24);
+            Controls.Add(title);
+
+            Label sub = new Label();
+            sub.Text = "把下面的机器码发给作者，拿到激活码后粘到下面，点「激活」。\r\n一个激活码对应一台电脑；以后要做续费，会另发新的码。";
+            sub.ForeColor = Muted;
+            sub.AutoSize = false;
+            sub.Size = new Size(504, 46);
+            sub.Location = new Point(28, 66);
+            Controls.Add(sub);
+
+            Label ml = new Label();
+            ml.Text = "机器码";
+            ml.ForeColor = Muted;
+            ml.AutoSize = true;
+            ml.Location = new Point(28, 126);
+            Controls.Add(ml);
+
+            TextBox mbox = new TextBox();
+            mbox.Text = machine;
+            mbox.ReadOnly = true;
+            mbox.Font = new Font("Consolas", 12f);
+            mbox.Location = new Point(28, 148);
+            mbox.Size = new Size(330, 28);
+            mbox.BorderStyle = BorderStyle.FixedSingle;
+            Controls.Add(mbox);
+
+            Button copy = new Button();
+            copy.Text = "复制";
+            copy.Location = new Point(370, 147);
+            copy.Size = new Size(76, 30);
+            copy.FlatStyle = FlatStyle.System;
+            copy.Click += delegate
+            {
+                try { Clipboard.SetText(machine); status.Text = "机器码已复制。"; }
+                catch { status.Text = "复制失败，可以手抄这 16 位。"; }
+            };
+            Controls.Add(copy);
+
+            Button contact = new Button();
+            contact.Text = "邮件联系";
+            contact.Location = new Point(452, 147);
+            contact.Size = new Size(80, 30);
+            contact.FlatStyle = FlatStyle.System;
+            contact.Click += delegate
+            {
+                try { Process.Start("mailto:?subject=" + Uri.EscapeDataString("课后服务管理 激活 - " + machine) + "&body=" + Uri.EscapeDataString("我的机器码：" + machine)); }
+                catch { }
+            };
+            Controls.Add(contact);
+
+            Label cl = new Label();
+            cl.Text = "激活码";
+            cl.ForeColor = Muted;
+            cl.AutoSize = true;
+            cl.Location = new Point(28, 192);
+            Controls.Add(cl);
+
+            box = new TextBox();
+            box.Font = new Font("Consolas", 9f);
+            box.Location = new Point(28, 214);
+            box.Size = new Size(504, 28);
+            box.BorderStyle = BorderStyle.FixedSingle;
+            box.MaxLength = 2000;
+            Controls.Add(box);
+
+            Button act = new Button();
+            act.Text = "激活";
+            act.Location = new Point(28, 258);
+            act.Size = new Size(120, 36);
+            act.FlatStyle = FlatStyle.System;
+            act.Click += delegate { DoActivate(); };
+            Controls.Add(act);
+
+            Button later = new Button();
+            later.Text = "先不用";
+            later.Location = new Point(160, 258);
+            later.Size = new Size(96, 36);
+            later.FlatStyle = FlatStyle.System;
+            later.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
+            Controls.Add(later);
+
+            status = new Label();
+            status.ForeColor = Muted;
+            status.AutoSize = false;
+            status.Size = new Size(504, 60);
+            status.Location = new Point(28, 310);
+            Controls.Add(status);
+
+            AcceptButton = act;
+        }
+
+        void DoActivate()
+        {
+            string cdk = box.Text.Trim();
+            if (cdk.Length == 0)
+            {
+                status.Text = "先把激活码粘进来。";
+                return;
+            }
+            status.Text = "正在核对…";
+            try
+            {
+                string body = "{\"cdk\":" + JsonQuote(cdk) + "}";
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + port.ToString() + "/api/license");
+                req.Method = "POST";
+                req.ContentType = "application/json; charset=utf-8";
+                req.Timeout = 8000;
+                req.Proxy = null;
+                byte[] bytes = Encoding.UTF8.GetBytes(body);
+                req.ContentLength = bytes.Length;
+                using (Stream s = req.GetRequestStream()) { s.Write(bytes, 0, bytes.Length); }
+                string resp;
+                using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
+                {
+                    using (StreamReader sr = new StreamReader(res.GetResponseStream(), Encoding.UTF8)) resp = sr.ReadToEnd();
+                }
+                if (resp.IndexOf("\"mode\":\"licensed\"") >= 0)
+                {
+                    status.Text = "激活成功。";
+                    DialogResult = DialogResult.OK;
+                    Close();
+                    return;
+                }
+                string err = PickString(resp, "error");
+                status.Text = err.Length > 0 ? err : "激活码没通过核对，检查一下是不是复制全了。";
+            }
+            catch (Exception ex)
+            {
+                status.Text = "连本地服务失败：" + ex.Message;
+            }
+        }
+
+        static string JsonQuote(string s)
+        {
+            StringBuilder sb = new StringBuilder("\"");
+            for (int i = 0; i < s.Length; i++)
+            {
+                char c = s[i];
+                if (c == '"' || c == '\\') sb.Append('\\').Append(c);
+                else if (c == '\n') sb.Append("\\n");
+                else if (c == '\r') sb.Append("\\r");
+                else if (c < ' ') sb.Append(' ');
+                else sb.Append(c);
+            }
+            return sb.Append('"').ToString();
+        }
+
+        /// <summary>从一段 JSON 里抠出 "key":"值"（不引第三方库）。</summary>
+        static string PickString(string json, string key)
+        {
+            string needle = "\"" + key + "\":\"";
+            int i = json.IndexOf(needle);
+            if (i < 0) return "";
+            int j = i + needle.Length;
+            StringBuilder sb = new StringBuilder();
+            while (j < json.Length)
+            {
+                char c = json[j];
+                if (c == '\\' && j + 1 < json.Length)
+                {
+                    char n = json[j + 1];
+                    if (n == 'u' && j + 5 < json.Length)
+                    {
+                        int code;
+                        if (int.TryParse(json.Substring(j + 2, 4), System.Globalization.NumberStyles.HexNumber, null, out code)) sb.Append((char)code);
+                        j += 6;
+                        continue;
+                    }
+                    if (n == 'n') sb.Append('\n');
+                    else if (n == 'r') sb.Append('\r');
+                    else if (n == 't') sb.Append('\t');
+                    else sb.Append(n);
+                    j += 2;
+                    continue;
+                }
+                if (c == '"') break;
+                sb.Append(c);
+                j++;
+            }
+            return sb.ToString();
         }
     }
 }

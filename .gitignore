@@ -8,6 +8,9 @@ dist/
 data/*.db
 data/*.db-wal
 data/*.db-shm
+# 本机的激活文件与试用记录（不该进仓库）
+data/license.json
+data/trial.json
 backups/
 *.log
 *.tsbuildinfo
@@ -16,3 +19,6 @@ backups/
 release/
 .macbuild/
 .gitee-token.txt
+
+# CDK 签名私钥（绝不能进仓库/安装包）
+.keys/

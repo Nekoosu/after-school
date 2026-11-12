@@ -165,6 +165,20 @@ ok("清单挂了会退到 GitHub 再问一次", typeof upd3.body?.fallbackError 
 await req("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ update_url: "" }) });
 fake.close();
 
+// 1.8.13 授权：没有壳给的机器码（AS_MACHINE）时一律 locked，浏览器直连拿不到授权
+const lic = await req("/api/license");
+ok("/api/license 永远 200", lic.res.status === 200, String(lic.res.status));
+let licJson = {};
+try {
+  licJson = JSON.parse(lic.text);
+} catch {
+  licJson = {};
+}
+ok("没有机器码就是 locked", licJson.mode === "locked" && typeof licJson.daysLeft === "number", lic.text.slice(0, 160));
+// 乱填的激活码要按「不行」回，不许 500
+const bad = await req("/api/license", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cdk: "AS1.notarealcode.xxx" }) });
+ok("假激活码被拒且不报错", bad.res.status === 200 && bad.body?.ok === false && typeof bad.body?.error === "string", bad.text.slice(0, 160));
+
 // 托盘小账：桌面壳托盘菜单第一行就吃这个接口的 text 字段
 const tray = await req("/api/shell/tray");
 ok("/api/shell/tray 永远 200", tray.res.status === 200, String(tray.res.status));
