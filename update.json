@@ -1,6 +1,6 @@
 {
-  "version": "1.8.8",
-  "url": "https://gitee.com/你的用户名/after-school-updates/releases",
-  "notes": "第一次试清单：升级不再依赖 GitHub。",
+  "version": "1.8.9",
+  "url": "https://github.com/Nekoosu/after-school/releases/download/v1.8.9/after-school-1.8.9.zip",
+  "notes": "默认走 Gitee 上的版本清单；设置页能手动「检查更新」。",
   "publishedAt": "2026-11-12"
 }

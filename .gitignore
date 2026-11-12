@@ -15,3 +15,4 @@ backups/
 .gh-token.txt
 release/
 .macbuild/
+.gitee-token.txt

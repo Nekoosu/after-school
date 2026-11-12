@@ -745,3 +745,16 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 - 设置页「关于」：`检查更新` 按钮重新打一次接口（`checkNow()`），`检查地址` 输入框绑 `update_url`，走既有的「保存设置」流程（`save()` 里加了 `update_url` 一项，**加新键必须同时改这里**）。`update.notes` 有值就显示一行。
 - 桌面壳那边不用改：托盘查新用的是同一个 `api/update`，只认字符串 `"hasUpdate":true`。
 - 冒烟 `scripts/smoke14.mjs` 用 `node:http` 起一个本地假清单服务当 Gitee raw（`fake.listen(0)` 拿随机端口），断言：配了地址就走清单且 `latest` 等于假清单里的值、`notes` 带回来、`hasUpdate` 为真、地址打不开仍是 200 + `ok:false`，最后 PATCH 回空串。基线 448 / 128 / 43。
+
+## 41. 把清单真正挂到 Gitee（1.8.9）
+
+- **默认值**：`src/db/ddl.ts` 的种子 `('update_url', 'https://gitee.com/nekoosuu/after-school-updates/raw/master/update.json')` —— 新库开箱就查 Gitee，不再依赖 GitHub 是否公开。老库不动（`INSERT OR IGNORE`），用户自己在设置页填。
+- 仓库：`nekoosuu/after-school-updates`（**公开**，空仓库起步，`default_branch` 一开始是 null）。仓库里只放 `update.json` 一份文件，安装包放不下（见下）。
+- 写文件用 Gitee API v5（`scripts/gitee-manifest.ps1`，读 `.gitee-token.txt`，**已进 `.gitignore`**）：
+  - 新建 `POST /api/v5/repos/{owner}/{repo}/contents/update.json`，body `{access_token, content: base64(UTF-8), message, branch:"master"}`；
+  - 更新 `PUT` 同一个 URL，**必须带 `sha`**（先 GET 拿）。脚本自己判断该 POST 还是 PUT。
+- **raw 是 302**：`/raw/master/update.json` 会跳 `raw.giteeusercontent.com/…?signature=…`，`fetch` 默认跟随，所以直接填 raw 链接没问题；用 `curl` 验证要加 `-L`。
+- **发行版附件上限 100 MB**（实测）：`POST /api/v5/repos/{owner}/{repo}/releases/{id}/attach_files`（`-F access_token=… -F file=@…zip`）传 133 MB 的包回 **HTTP 400 `{"message":"验证失败：文件大小已超出限制：100 MB"}`**。所以大包留在 GitHub release，Gitee 那边只当「公告板 + 下载跳板」，清单里的 `url` 指向 GitHub 的直链或网盘页。
+- **坑**：带中文的 `.ps1` 用 write 工具写出来**没有 BOM**，PS5.1 会按 GBK 解成乱码——写进清单后 JSON 直接坏掉（症状：`Bad control character in string literal`）。所以清单内容一律**从 `update.json` 文件按 UTF-8 读**（`[System.IO.File]::ReadAllText($p, [Text.UTF8Encoding]::new($false))`）再 base64，不要把中文写在 `.ps1` 里。
+- Gitee raw 有 CDN 缓存：刚 PUT 完立刻拉可能拿到上一版（我遇到过，`fetch` 报 JSON 坏、`curl -L` 同时却是对的）。**验证以 `curl -L` 或稍后重试为准。**
+- 1.8.9 的验证基线：冒烟 **448**、ui-check **129**（新增一条「检查地址默认就填着 Gitee 清单」）、单测 43。设置页那句 hint 和 placeholder 也要跟着默认值走（旧文案「留空 = 用 GitHub」已经不对了）。

@@ -222,5 +222,5 @@ INSERT OR IGNORE INTO setting (key, value) VALUES
   ('ai_key', ''),
   ('api_token', ''),
   ('feedback_tone', 'plain'),
-  ('update_url', '');
+  ('update_url', 'https://gitee.com/nekoosuu/after-school-updates/raw/master/update.json');
 `;

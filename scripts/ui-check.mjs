@@ -723,14 +723,20 @@ async function main() {
     const updUi = JSON.parse(
       String(
         await evalJS(`const b = Array.from(document.querySelectorAll("button")).find(x => x.textContent.includes("检查更新"));
-          const inp = Array.from(document.querySelectorAll("input")).find(x => (x.placeholder || "") === "留空 = 用 GitHub");
-          return JSON.stringify({ btn: !!b, input: !!inp, label: document.body.innerText.includes("检查地址") });`),
+          const inp = Array.from(document.querySelectorAll("input")).find(x => (x.placeholder || "").includes("Gitee"));
+          const box = inp ? inp.value : "";
+          return JSON.stringify({ btn: !!b, input: !!inp, label: document.body.innerText.includes("检查地址"), prefilled: box.includes("gitee.com") });`),
       ),
     );
     ok(
       "设置页有「检查更新」按钮和「检查地址」输入框",
       updUi.btn === true && updUi.input === true && updUi.label === true,
       JSON.stringify(updUi),
+    );
+    ok(
+      "「检查地址」默认就填着 Gitee 的清单（1.8.9）",
+      updUi.prefilled === true,
+      String(updUi.prefilled),
     );
 
     console.log("\n[24] 标题栏一体、当前项竖条、手机抽屉");

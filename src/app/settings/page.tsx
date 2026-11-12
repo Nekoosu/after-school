@@ -742,16 +742,16 @@ export default function SettingsPage() {
                   {update?.ok && update.notes ? (
                     <div className="fs-sm muted">{update.notes}</div>
                   ) : null}
-                  {/* 检查地址：留空走 GitHub，填了就走自己的公开清单（Gitee raw 之类） */}
+                  {/* 检查地址：默认是作者放在 Gitee 的清单，也可以填自己的 */}
                   <Field
                     label="检查地址"
-                    hint="留空 = 用 GitHub 的发布页；填公开清单的 raw 地址（Gitee 仓库里的 update.json）就走清单，国内也能查到。改完点上面的「保存设置」，再点「检查更新」。"
+                    hint="默认查作者放在 Gitee 的清单（国内也能打开）；换成你自己那份 update.json 的 raw 链接也行，清空就退回 GitHub 的发布页。改完点上面的「保存设置」，再点「检查更新」。"
                   >
                     <input
                       className="input mono fs-sm"
                       value={s.update_url ?? ""}
                       onChange={(e) => set("update_url", e.target.value)}
-                      placeholder="留空 = 用 GitHub"
+                      placeholder="默认：作者放在 Gitee 的清单"
                     />
                   </Field>
                   <div className="row between">
