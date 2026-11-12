@@ -658,3 +658,15 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 
 - 438 项接口冒烟 / 121 项点击检查 / 43 个单元测试。
 - 实测：× → 进程活、3210 仍在听、窗口不可见；再双击 exe → 第二进程 0 秒退出、窗口回来、只有 1 个进程；`--quit` → 1 秒内全退、端口关闭、`wal` 0、`window.txt` 有值、`backups` 多一份 auto。
+
+### 1.8.2 补的两件小事
+
+1. **最小化也进托盘**：`AppForm.OnResize` 里 `WindowState == Minimized && !allowClose` → `HideToTray()`。注意 `HideToTray` 之后窗口状态还停在 Minimized，`ShowFromTray()` 里那句 `if (WindowState == Minimized) WindowState = Normal;` 就是给它兜底的，别删。
+2. **开机时自动启动**：托盘菜单里的复选项，直接读写 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 的 `AfterSchool` 值，存的是 `"<exe 完整路径>"`（带引号，防路径里有空格）。`AutoStartEnabled()` 会顺带比对路径——软件换了位置，旧的启动项就不再显示为勾选。不写服务、不写计划任务，卸载就是取消勾选或删那一条。
+   - 验证方式：`Set-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run -Name AfterSchool` 后能看到值、删掉后为空即可；菜单项的勾选状态没法从外部断言，别在这上面绕。
+   - 这条只对拷出来的 exe 有意义：开发目录里跑 `csc` 出来的测试 exe 也会被记进注册表，测完记得删。
+
+### 验证基线（1.8.2）
+
+- 438 项接口冒烟 / 121 项点击检查 / 43 个单元测试；打包 exe 42,496 字节，`使用说明.txt` 4403 字节（BOM 在）。
+- 实测：最小化 → 进程活、窗口不可见、端口仍在听；再双击 exe → 窗口回来；`--quit` → 干净收尾。

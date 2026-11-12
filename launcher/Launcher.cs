@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -17,8 +18,8 @@ namespace AfterSchool
 {
     /// <summary>
     /// 课后服务管理 —— 桌面启动器（1.6.0 起改成「打开就是软件」）。
-    /// 流程：找一个能用的端口 → 起 app\node.exe → 等 /api/health 通 → 用 Edge 的
-    /// --app 模式开出无地址栏的窗口（看着就是一个桌面软件）→ 窗口关掉就优雅停机。
+    /// 流程：找一个能用的端口 → 起 app\node.exe → 等 /api/health 通 → 用 WebView2 自己开一个
+    /// 窗口（1.8.0 起不再借 Edge）→ 关窗收进托盘，托盘「退出」才优雅停机。
     /// 用 C# 5 写（本机 csc 只支持到 C# 5，别用 $"..."、nameof、?.）。
     /// </summary>
     static class Launcher
@@ -981,6 +982,12 @@ namespace AfterSchool
             backup.Click += delegate { BackupNow(); };
             menu.Items.Add(backup);
 
+            ToolStripMenuItem auto = new ToolStripMenuItem("开机时自动启动");
+            auto.CheckOnClick = true;
+            auto.Checked = AutoStartEnabled();
+            auto.Click += delegate { SetAutoStart(auto.Checked); };
+            menu.Items.Add(auto);
+
             menu.Items.Add(new ToolStripSeparator());
 
             ToolStripMenuItem quit = new ToolStripMenuItem("退出");
@@ -1017,6 +1024,56 @@ namespace AfterSchool
             {
                 trayTipShown = true;
                 Balloon("还在后台运行", "点托盘上的「课」图标回到窗口；右键图标选「退出」才是真的关掉。");
+            }
+        }
+
+        /// <summary>点最小化也是一样的：收进托盘，不占任务栏（同类软件都这么干）。</summary>
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (!allowClose && WindowState == FormWindowState.Minimized)
+            {
+                HideToTray();
+            }
+        }
+
+        const string RunKey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+        const string RunName = "AfterSchool";
+
+        /// <summary>看注册表里有没有「开机自动启动」这一条，并且指向当前这个 exe。</summary>
+        static bool AutoStartEnabled()
+        {
+            try
+            {
+                using (RegistryKey k = Registry.CurrentUser.OpenSubKey(RunKey, false))
+                {
+                    if (k == null) return false;
+                    string v = k.GetValue(RunName) as string;
+                    if (string.IsNullOrEmpty(v)) return false;
+                    return v.IndexOf(Application.ExecutablePath, StringComparison.OrdinalIgnoreCase) >= 0;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        static void SetAutoStart(bool on)
+        {
+            try
+            {
+                using (RegistryKey k = Registry.CurrentUser.OpenSubKey(RunKey, true))
+                {
+                    if (k == null) return;
+                    if (on) k.SetValue(RunName, "\"" + Application.ExecutablePath + "\"");
+                    else k.DeleteValue(RunName, false);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("设置开机启动失败：" + ex.Message, "课后服务管理",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
