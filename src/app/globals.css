@@ -4853,3 +4853,27 @@ html[data-shell="app"] .crumb-sep {
 html[data-shell="app"] .topbar-crumb b {
   font-size: 15px;
 }
+/* 滚动条占位：免得内容被右侧滚动条压住半个字（顶栏日期最明显） */
+html {
+  scrollbar-gutter: stable;
+}
+/* 窗口不高时（小笔记本 / 用户把窗口压扁）把侧栏压紧一点，让 15 个入口都塞得下 */
+@media (max-height: 780px) {
+  .nav-item {
+    height: 32px;
+    font-size: 12.5px;
+  }
+  .nav-group-label {
+    padding-top: 8px;
+    padding-bottom: 4px;
+  }
+  .brand-sub {
+    display: none;
+  }
+  .sidebar-foot {
+    padding-bottom: 8px;
+  }
+  .content {
+    padding-top: 14px;
+  }
+}

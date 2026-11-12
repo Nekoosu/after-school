@@ -602,3 +602,29 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 2. 在同一个 `evalJS` 里「点按钮 + 立刻读 DOM」拿到的是点击前的状态（React 还没提交）。点一下、`sleep(400~500)`、再读。
 3. 改了 UI 结构记得回头改断言：这一轮 `datalist` 换成 `<select>` 后，`[17]` 里「模型名输入框挂了 datalist」直接变红——断言跟着实现走，别让它替实现背锅。
 4. 验证基线（1.7.1）：**434 项接口冒烟 / 121 项点击检查 / 43 个单元测试**。
+## 35. 换成 WebView2 自己的窗口（1.8.0）
+
+### 为什么换
+
+1.7.1 之前桌面版是「Edge 用 `--app=` 打开一个无地址栏窗口」：窗口图标是 Edge 的、任务栏归 msedge.exe、右键菜单和拖选还是网页行为、关窗要靠轮询 Edge 进程猜时机。1.8.0 改成 WinForms 自己开窗口、里面嵌 WebView2。
+
+### 结构
+
+- `launcher/shell/lib/` 放三件套：`Microsoft.Web.WebView2.Core.dll`（570,944）、`Microsoft.Web.WebView2.WinForms.dll`（38,480）、`WebView2Loader.dll`（165,440，**必须跟 exe 同目录**，否则进程秒退、连窗口都不出）。
+- SDK 从本机 `C:\Program Files\Microsoft OfficePLUS\...\addin\` 拷来（1.0.2535.41），不用下载 nuget。
+- `launcher/Launcher.cs`：`class AppForm : Form` 内嵌 `WebView2`（Dock.Fill，`Visible=false` 直到 `NavigationCompleted`，避免白闪）；UA 追加 ` AfterSchoolShell/1.0`；注入打印桥（`window.print` → `postMessage('as-print')` → `CoreWebView2.ShowPrintUI`，并拦 `Ctrl+P`）；`NewWindowRequested` 一律 `Handled=true` + `Process.Start(uri)`；`IsStatusBarEnabled=false`、`AreDefaultContextMenusEnabled=false`。
+- `scripts/package.ps1` 第 7 步：`/platform:x64` + `/r:$wvCore /r:$wvForms`（**不能写 `/r:(Join-Path …)` 内联**），编译完把三个 dll 拷进 dist。
+
+### 坑（都踩过）
+
+1. **`Application.EnableVisualStyles()` / `SetCompatibleTextRenderingDefault(false)` 必须在任何窗口创建之前**。启动画面 `Application.Run(SplashForm)` 先跑，这两句放在后面就弹「在应用程序中创建第一个 IWin32Window 对象之前，必须调用 SetCompatibleTextRenderingDefault。」→ 放到 `Main` 最开头（`SetProcessDpiAwareness` 之后）。
+2. `window.txt` 存的是 **窗口外框**尺寸（`GetWindowRect` 量的），Form 里必须用 `Size = new Size(w,h)`，写 `ClientSize` 会每开一次大一圈（实测 1336×939 → 1352×978）。
+3. PowerShell 里 `New-Object "WinX+RECT"` 必须赋给带类型的变量 `[WinX+RECT]$r`，否则 `GetWindowRect` 传 `[ref]` 静默返回 0×0。
+4. 抓窗口截图别用 `CopyFromScreen`（DSH 窗口在前时会拍到上层），用 **`PrintWindow(hwnd, hdc, 2)`**；`SetForegroundWindow` 之后 `MainWindowHandle` 还要等 3~5 秒。
+5. WinForms 的 `Timer` 在 `SplashForm` 里要写全 `System.Windows.Forms.Timer`，否则 CS0104 二义。
+6. 正文被右侧滚动条压住半个字（顶栏日期最明显）→ `html { scrollbar-gutter: stable; }`。
+
+### 验证基线（1.8.0）
+
+- 打包版双击 ≈4~6 秒出窗口（标题「课后服务管理」、图标是自己的）；关窗 1.2 秒内 exe + node 全退、端口无监听、`app.db-wal` 归零；`data\window.txt` 记 `WxH+X+Y`，重开同尺寸同位置。
+- 434 项接口冒烟 / 121 项点击检查 / 43 个单元测试。

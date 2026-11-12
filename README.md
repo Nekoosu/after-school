@@ -34,7 +34,8 @@
 | **对接** | 令牌保护的 `/api/v1/*` 只读接口 + 接口文档页，给别的程序或 AI 用 |
 | **使用说明** | 内置 21 章操作手册，能打印也能存 PDF |
 | **省心的小东西** | 顶栏 ＋ 快速新建（排课/记一笔/收钱/加学生）、主题**点一下就切**浅色深色（想跟着系统走：设置 → 外观）、`?` 快捷键说明、设置页**数据体检**（查漏记、重名、没挂老师的课）、**查新版本**、今日页一键复制催费话术、窄窗口自动两列课表 + 表格横滚、打印永远黑字白底 |
-| **像个软件** | 侧栏与标题栏连成一整块（54px）、当前页左侧一道竖条、折叠后悬停浮出页面名、手机抽屉拉开锁背景滚动、桌面版双击不弹浏览器菜单、拖选不会把整面涂灰、AI 模型名从下拉里选 |
+| **像个软件** | 侧栏与标题栏连成一整块（54px）、当前页左侧一道竖条、折叠后悬停浮出页面名、手机抽屉拉开锁背景滚动、AI 模型名从下拉里选 |
+| **独立的窗口** | 1.8.0 起不再是「Edge 开个窗口」：有自己的图标、标题栏和任务栏名，窗口大小和位置记住，打印弹系统打印预览，外链用浏览器打开 |
 
 <table>
 <tr>
@@ -51,7 +52,7 @@
 
 **下载**：[最新版本](https://github.com/Nekoosu/after-school/releases/latest)
 
-- Windows：拿 `after-school-<版本号>.zip`（例如 `after-school-1.7.1.zip`）
+- Windows：拿 `after-school-<版本号>.zip`（例如 `after-school-1.8.0.zip`）
 
 **Windows**
 
@@ -87,11 +88,11 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\package.ps1
-Compress-Archive -Path dist\* -DestinationPath release\windows\after-school-1.7.1.zip
+Compress-Archive -Path dist\* -DestinationPath release\windows\after-school-1.8.0.zip
 ```
 
-然后传到 GitHub Releases，tag 用 `v1.7.1`、文件名按 `项目名-版本号.zip`：
-Windows 是 `after-school-1.7.1.zip`。
+然后传到 GitHub Releases，tag 用 `v1.8.0`、文件名按 `项目名-版本号.zip`：
+Windows 是 `after-school-1.8.0.zip`。
 以后每个版本都按这套命名，下载链接永远指向 [releases/latest](https://github.com/Nekoosu/after-school/releases/latest)。
 
 ## 技术栈
@@ -99,7 +100,7 @@ Windows 是 `after-school-1.7.1.zip`。
 - **Next.js 15** App Router + **React 19**，页面全部客户端渲染，接口全部 `force-dynamic`
 - **SQLite**（better-sqlite3），14 张表 + 2 个视图，课时用流水账（`hours_ledger`），余额永远是 `SUM(delta_minutes)`；`synchronous=FULL`，断电或强杀都不丢已提交的数据
 - **手写 CSS** 设计系统（约 4690 行，30 个分区），无 UI 库、无 Tailwind、无 ORM
-- 51 个接口、20 个页面、43 个单元测试、434 项接口冒烟、114 项真实浏览器点击检查
+- 51 个接口、20 个页面、43 个单元测试、434 项接口冒烟、121 项真实浏览器点击检查
 
 ## 目录
 

@@ -59,13 +59,20 @@ if (-not (Test-Path $srcBin)) { throw "native binary missing in project node_mod
 New-Item -ItemType Directory -Path (Join-Path $app "node_modules\better-sqlite3\build\Release") -Force | Out-Null
 Copy-Item -Force $srcBin (Join-Path $app "node_modules\better-sqlite3\build\Release\better_sqlite3.node")
 
-Step "7/8 bundle node.exe + compile launcher exe"
+Step "7/8 bundle node.exe + compile launcher exe (WebView2 shell)"
 Copy-Item -Force "C:\Program Files\nodejs\node.exe" (Join-Path $app "node.exe")
 $exe = Join-Path $dist "AfterSchool.exe"
 $ico = Join-Path $root "public\app.ico"
 $src = Join-Path $root "launcher\Launcher.cs"
-& $csc /nologo /target:winexe /platform:anycpu /codepage:65001 /out:$exe /win32icon:$ico /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll $src
+$wv2 = Join-Path $root "launcher\shell\lib"
+$wvCore = Join-Path $wv2 "Microsoft.Web.WebView2.Core.dll"
+$wvForms = Join-Path $wv2 "Microsoft.Web.WebView2.WinForms.dll"
+# 壳要跟 WebView2 的托管程序集一起编译，运行期 dll 也必须放在 exe 旁边
+& $csc /nologo /target:winexe /platform:x64 /codepage:65001 /out:$exe /win32icon:$ico /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:$wvCore /r:$wvForms $src
 if ($LASTEXITCODE -ne 0) { throw "csc failed" }
+Copy-Item -Force $wvCore $dist
+Copy-Item -Force $wvForms $dist
+Copy-Item -Force (Join-Path $wv2 "WebView2Loader.dll") $dist
 
 Step "8/8 copy the plain-text readme next to the exe"
 Get-ChildItem (Join-Path $root "launcher") -Filter *.txt | Copy-Item -Destination $dist -Force

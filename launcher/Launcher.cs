@@ -10,6 +10,8 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
 
 namespace AfterSchool
 {
@@ -22,20 +24,21 @@ namespace AfterSchool
     static class Launcher
     {
         static Process child;
-        static Process appWindow;
+        static AppForm appForm;
         static string appDir;
         static string dataDir;
-        static string profileDir;
+        static string webviewDir;
         static int port;
         static volatile bool ready;
         static volatile string lastError = "";
         static SplashForm splash;
         static IntPtr jobHandle = IntPtr.Zero;
 
-        // 记住上次窗口多大：下次打开还是这个尺寸（跟真软件一样）
+        // 记住上次窗口多大、在哪儿：下次打开还是这个样子（跟真软件一样）
         static volatile int winW = 1320;
         static volatile int winH = 900;
-        static volatile bool watching = false;
+        static volatile int winX = int.MinValue;
+        static volatile int winY = int.MinValue;
 
         [DllImport("shcore.dll")]
         static extern int SetProcessDpiAwareness(int value);
@@ -124,10 +127,14 @@ namespace AfterSchool
             string exeDir = AppDomain.CurrentDomain.BaseDirectory;
             appDir = Join(exeDir, "app");
             dataDir = Join(appDir, "data");
-            profileDir = Join(dataDir, "window-profile");
+            webviewDir = Join(dataDir, "webview");
 
             // 高分屏（125%/150%/200% 缩放）下别糊：按显示器独立缩放
             try { SetProcessDpiAwareness(2); } catch { }
+
+            // 这两句必须在任何窗口（包括启动画面）创建之前调用，否则 WinForms 直接抛异常
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
 
             // 只为了截图/调样式：AfterSchool.exe --splash 单独显示启动画面 4 秒，不启动服务
             if (args.Length > 0 && args[0] == "--splash")
@@ -165,8 +172,7 @@ namespace AfterSchool
                 if (running > 0 && Health(running))
                 {
                     port = running;
-                    OpenAppWindow();
-                    if (appWindow != null) appWindow.WaitForExit();
+                    RunApp();
                     SaveWindowSize();
                     return;
                 }
@@ -191,13 +197,9 @@ namespace AfterSchool
                     return;
                 }
 
-                // 服务好了，把启动画面收起来，换成真正的应用窗口
-                OpenAppWindow();
-                if (appWindow != null)
-                {
-                    appWindow.WaitForExit();
-                    SaveWindowSize();
-                }
+                // 服务好了，把启动画面收起来，换成我们自己的窗口
+                RunApp();
+                SaveWindowSize();
                 ShutdownServer();
                 KillChild();
             }
@@ -213,14 +215,17 @@ namespace AfterSchool
             return Join(dataDir, "window.txt");
         }
 
-        /// <summary>上次窗口多大，这次还这么大（存成 1320x900 这种）。</summary>
+        /// <summary>上次窗口多大、在哪儿，这次还这样（存成 1320x900+120+60 这种）。</summary>
         static void LoadWindowSize()
         {
             try
             {
                 if (File.Exists(WindowFile()))
                 {
-                    string[] parts = File.ReadAllText(WindowFile()).Trim().Split('x');
+                    string s = File.ReadAllText(WindowFile()).Trim();
+                    int plus = s.IndexOf('+');
+                    string sizePart = plus >= 0 ? s.Substring(0, plus) : s;
+                    string[] parts = sizePart.Split('x');
                     if (parts.Length == 2)
                     {
                         int w, h;
@@ -230,6 +235,21 @@ namespace AfterSchool
                             {
                                 winW = w;
                                 winH = h;
+                            }
+                        }
+                    }
+                    if (plus >= 0)
+                    {
+                        string[] pos = s.Substring(plus + 1).Split('+');
+                        int x, y;
+                        if (pos.Length == 2 && int.TryParse(pos[0], out x) && int.TryParse(pos[1], out y))
+                        {
+                            Rectangle screen = SystemInformation.VirtualScreen;
+                            if (x > screen.Left - 200 && x < screen.Right - 200 &&
+                                y > screen.Top - 100 && y < screen.Bottom - 100)
+                            {
+                                winX = x;
+                                winY = y;
                             }
                         }
                     }
@@ -255,48 +275,16 @@ namespace AfterSchool
 
         static void SaveWindowSize()
         {
-            try { File.WriteAllText(WindowFile(), winW.ToString() + "x" + winH.ToString()); }
-            catch { }
-        }
-
-        /// <summary>窗口开着的时候隔一会儿量一次尺寸，关掉时把最后的尺寸留下来。</summary>
-        static void WatchWindowSize()
-        {
-            if (watching) return;
-            watching = true;
-            Thread t = new Thread(new ThreadStart(delegate
+            try
             {
-                while (appWindow != null && !appWindow.HasExited)
+                string s = winW.ToString() + "x" + winH.ToString();
+                if (winX != int.MinValue && winY != int.MinValue)
                 {
-                    try
-                    {
-                        uint target = (uint)appWindow.Id;
-                        EnumProc cb = delegate(IntPtr h, IntPtr lp)
-                        {
-                            uint pid;
-                            GetWindowThreadProcessId(h, out pid);
-                            if (pid != target || !IsWindowVisible(h)) return true;
-                            RECT r;
-                            if (GetWindowRect(h, out r))
-                            {
-                                int w = r.Right - r.Left;
-                                int ht = r.Bottom - r.Top;
-                                if (w >= 800 && w <= 4000 && ht >= 600 && ht <= 3000)
-                                {
-                                    winW = w;
-                                    winH = ht;
-                                }
-                            }
-                            return true;
-                        };
-                        EnumWindows(cb, IntPtr.Zero);
-                    }
-                    catch { }
-                    Thread.Sleep(1200);
+                    s += "+" + winX.ToString() + "+" + winY.ToString();
                 }
-            }));
-            t.IsBackground = true;
-            t.Start();
+                File.WriteAllText(WindowFile(), s);
+            }
+            catch { }
         }
 
         static string Url()
@@ -495,35 +483,38 @@ namespace AfterSchool
         }
 
         /// <summary>
-        /// 用 Edge 的 --app 模式开一个没有地址栏、没有标签页的窗口，
-        /// 看起来就是一个独立软件；这个窗口关掉，进程就退出，我们据此停机。
+        /// 用 WebView2 自己开一个窗口：窗口图标、标题、最小化最大化都是我们自己的，
+        /// 任务栏里也不再是浏览器。服务已经是通的，这里只管把界面装进去。
         /// </summary>
-        static void OpenAppWindow()
+        static void RunApp()
         {
-            string edge = FindEdge();
-            if (edge == null)
-            {
-                OpenBrowser(port);
-                return;
-            }
+            Icon ico = null;
             try
             {
-                try { Directory.CreateDirectory(profileDir); } catch { }
+                string ip = Join(appDir, "public\\app.ico");
+                if (File.Exists(ip)) ico = new Icon(ip);
+            }
+            catch { }
 
-                ProcessStartInfo psi = new ProcessStartInfo();
-                psi.FileName = edge;
-                psi.Arguments = "--app=" + Url() +
-                    " --user-data-dir=\"" + profileDir + "\"" +
-                    " --no-first-run --no-default-browser-check --disable-features=msEdgeSidebarV2" +
-                    " --window-size=" + winW.ToString() + "," + winH.ToString();
-                psi.UseShellExecute = false;
-                appWindow = Process.Start(psi);
-                WatchWindowSize();
-            }
-            catch
+            AppForm f = new AppForm(Url(), ico, winW, winH, winX, winY, webviewDir);
+            f.FormClosed += delegate
             {
-                OpenBrowser(port);
-            }
+                try
+                {
+                    Rectangle b = f.WindowState == FormWindowState.Normal ? f.Bounds : f.RestoreBounds;
+                    if (b.Width >= 800 && b.Width <= 4000 && b.Height >= 600 && b.Height <= 3000)
+                    {
+                        winW = b.Width;
+                        winH = b.Height;
+                        winX = b.Left;
+                        winY = b.Top;
+                    }
+                }
+                catch { }
+            };
+            appForm = f;
+            Application.Run(f);
+            appForm = null;
         }
 
         /// <summary>请服务端自己收尾（WAL 写回主库）再退出，等不到就靠 KillChild 兜底。</summary>
@@ -838,6 +829,135 @@ namespace AfterSchool
             {
                 g.DrawString("第一次启动要建数据库，通常十几秒 · 数据都存在本机", fTiny, new SolidBrush(Color.FromArgb(110, 125, 150)), 44, 204);
             }
+        }
+    }
+
+    /// <summary>
+    /// 应用窗口本体：一个 WinForms 窗口 + 里面铺满的 WebView2。
+    /// 这样标题栏图标、标题文字、最小化/最大化/关闭都是我们自己的，
+    /// 任务栏里也是「课后服务管理」，不再露出浏览器。
+    /// </summary>
+    class AppForm : Form
+    {
+        readonly string startUrl;
+        readonly string dataDir;
+        WebView2 view;
+        bool navigated;
+
+        public AppForm(string url, Icon ico, int w, int h, int x, int y, string webviewDataDir)
+        {
+            startUrl = url;
+            dataDir = webviewDataDir;
+
+            Text = "课后服务管理";
+            if (ico != null) Icon = ico;
+            // window.txt 记的是窗口外框尺寸（GetWindowRect 量的），所以这里也用 Size
+            Size = new Size(w, h);
+            MinimumSize = new Size(900, 620);
+            StartPosition = (x != int.MinValue && y != int.MinValue)
+                ? FormStartPosition.Manual : FormStartPosition.CenterScreen;
+            if (x != int.MinValue && y != int.MinValue) Location = new Point(x, y);
+            BackColor = Color.FromArgb(246, 247, 249);
+            DoubleBuffered = true;
+
+            view = new WebView2();
+            view.Dock = DockStyle.Fill;
+            view.Visible = false;
+            view.DefaultBackgroundColor = Color.FromArgb(246, 247, 249);
+            Controls.Add(view);
+
+            Shown += OnShown;
+        }
+
+        async void OnShown(object sender, EventArgs e)
+        {
+            try
+            {
+                Directory.CreateDirectory(dataDir);
+                CoreWebView2Environment env = await CoreWebView2Environment.CreateAsync(null, dataDir, null);
+                await view.EnsureCoreWebView2Async(env);
+
+                CoreWebView2 core = view.CoreWebView2;
+                core.Settings.AreDefaultContextMenusEnabled = false;
+                core.Settings.AreDevToolsEnabled = false;
+                core.Settings.IsStatusBarEnabled = false;
+                core.Settings.IsZoomControlEnabled = true;
+                core.Settings.AreBrowserAcceleratorKeysEnabled = true;
+                core.Settings.IsPasswordAutosaveEnabled = false;
+
+                // 让页面知道自己跑在桌面壳里（顶栏不再重复写软件名、右键菜单也不弹）
+                try
+                {
+                    core.Settings.UserAgent = core.Settings.UserAgent + " AfterSchoolShell/1.0";
+                }
+                catch { }
+
+                // 页面里那些「打印」按钮调的是 window.print()，WebView2 默认什么都不做。
+                // 把它改成给外壳发个消息，由外壳调系统的打印预览。
+                string printBridge =
+                    "window.print = function () { try { window.chrome.webview.postMessage('as-print'); } catch (e) {} };" +
+                    "document.addEventListener('keydown', function (e) {" +
+                    "  if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {" +
+                    "    e.preventDefault(); try { window.chrome.webview.postMessage('as-print'); } catch (err) {}" +
+                    "  }" +
+                    "}, true);";
+                await core.AddScriptToExecuteOnDocumentCreatedAsync(printBridge);
+
+                core.WebMessageReceived += delegate(object s, CoreWebView2WebMessageReceivedEventArgs a)
+                {
+                    string msg = "";
+                    try { msg = a.TryGetWebMessageAsString(); } catch { }
+                    if (msg == "as-print") DoPrint(core);
+                };
+
+                // 页面里的外链（比如 GitHub）用系统默认浏览器打开，别在软件里跳走
+                core.NewWindowRequested += delegate(object s, CoreWebView2NewWindowRequestedEventArgs a)
+                {
+                    a.Handled = true;
+                    try { Process.Start(a.Uri); } catch { }
+                };
+
+                core.NavigationCompleted += delegate(object s, CoreWebView2NavigationCompletedEventArgs a)
+                {
+                    if (!navigated)
+                    {
+                        navigated = true;
+                        view.Visible = true;
+                    }
+                };
+
+                core.Navigate(startUrl);
+            }
+            catch (Exception ex)
+            {
+                DialogResult r = MessageBox.Show(
+                    "界面组件（WebView2）启动失败：\n" + ex.Message +
+                    "\n\n这台电脑可能缺少 WebView2 运行时。点「确定」用浏览器打开。",
+                    "课后服务管理", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
+                if (r == DialogResult.OK)
+                {
+                    try { Process.Start(startUrl); } catch { }
+                }
+                Close();
+            }
+        }
+
+        void DoPrint(CoreWebView2 core)
+        {
+            try
+            {
+                core.ShowPrintUI(CoreWebView2PrintDialogKind.Browser);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("打印打不开：" + ex.Message, "课后服务管理",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            base.OnFormClosing(e);
         }
     }
 }

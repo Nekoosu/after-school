@@ -24,6 +24,13 @@ interface NavGroup {
 
 type ThemePref = "light" | "dark" | "system";
 
+/** 现在是不是跑在桌面壳里（自带窗口的 exe）：壳会给 UA 加一句 AfterSchoolShell/1.0 */
+function isShell(): boolean {
+  if (typeof window === "undefined") return false;
+  if (/AfterSchoolShell/i.test(navigator.userAgent)) return true;
+  return window.matchMedia?.("(display-mode: standalone)").matches ?? false;
+}
+
 const SHORTCUTS: Array<{ keys: string; what: string }> = [
   { keys: "Ctrl+K", what: "全局搜索：学生、课程、教案、上课记录" },
   { keys: "Ctrl+B", what: "收起 / 展开左侧导航" },
@@ -154,14 +161,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     setHelpOpen(false);
     // 标题跟着页面走：浏览器标签、任务栏、任务视图里都能认出是哪一页；
     // 桌面壳（Edge 的 --app 窗口）里只要软件名，别把页面名塞进窗口标题，看着才像软件。
-    const inShell = window.matchMedia?.("(display-mode: standalone)").matches ?? false;
+    const inShell = isShell();
     document.title = inShell ? "课后服务管理" : `${titleOf(pathname)} · 课后服务管理`;
   }, [pathname]);
 
   // 桌面壳里把「网页感」收掉：右键菜单、双击选词、拖图片一律不响应（输入框和手册正文除外）
   useEffect(() => {
-    const inShell = window.matchMedia?.("(display-mode: standalone)").matches ?? false;
-    if (!inShell) return;
+    if (!isShell()) return;
     document.documentElement.dataset.shell = "app";
     const isText = (el: EventTarget | null) => {
       const n = el as HTMLElement | null;
