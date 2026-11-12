@@ -74,6 +74,8 @@ export default function SettingsPage() {
     error?: string;
     source?: string;
     notes?: string | null;
+    /** 清单没读到、退到 GitHub 找到时报一句（两边都失败时也只是排错线索） */
+    fallbackError?: string;
   } | null>(null);
   const [checking, setChecking] = useState(false);
   const [restoreFile, setRestoreFile] = useState<string | null>(null);
@@ -741,6 +743,10 @@ export default function SettingsPage() {
                   {/* 清单里写了说明就显一行 */}
                   {update?.ok && update.notes ? (
                     <div className="fs-sm muted">{update.notes}</div>
+                  ) : null}
+                  {/* 清单这条路没读到时，退到 GitHub 问了一次——把这件事说清楚，别让人以为清单坏了 */}
+                  {update?.ok && update.fallbackError ? (
+                    <div className="fs-sm muted">{update.fallbackError}</div>
                   ) : null}
                   {/* 检查地址：默认是作者放在 Gitee 的清单，也可以填自己的 */}
                   <Field

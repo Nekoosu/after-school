@@ -758,3 +758,16 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 - **坑**：带中文的 `.ps1` 用 write 工具写出来**没有 BOM**，PS5.1 会按 GBK 解成乱码——写进清单后 JSON 直接坏掉（症状：`Bad control character in string literal`）。所以清单内容一律**从 `update.json` 文件按 UTF-8 读**（`[System.IO.File]::ReadAllText($p, [Text.UTF8Encoding]::new($false))`）再 base64，不要把中文写在 `.ps1` 里。
 - Gitee raw 有 CDN 缓存：刚 PUT 完立刻拉可能拿到上一版（我遇到过，`fetch` 报 JSON 坏、`curl -L` 同时却是对的）。**验证以 `curl -L` 或稍后重试为准。**
 - 1.8.9 的验证基线：冒烟 **448**、ui-check **129**（新增一条「检查地址默认就填着 Gitee 清单」）、单测 43。设置页那句 hint 和 placeholder 也要跟着默认值走（旧文案「留空 = 用 GitHub」已经不对了）。
+
+## 42. 清单读不到就退到 GitHub（1.8.10）
+
+用户原话（m13013）：「那还是留在github好了 等后续我把私密改公开了默认就能读到更新就行」。意思是包继续放 GitHub，等他哪天把仓库从私有改成公开，默认路径就该直接读到更新——不能让他到时候再回来改设置。
+
+- `src/app/api/update/route.ts` 拆成两个纯函数：`fromManifest(url)` / `fromGithub()`，各自返回 `Upd` 对象（不是 `Response`），`GET()` 决定顺序并统一 `Response.json(o, { status: 200 })`。这样「查一次」「再查一次」不用改 HTTP 层。
+- **顺序**：设置里的 `update_url` 为空 → 直接问 GitHub；不为空 → 先读清单，`ok:false` 才去问 GitHub。
+  - 清单挂了 + GitHub 通了 → 返回 GitHub 的结果，`source:"github"`，并带 `fallbackError:"清单没读到（…），已改用 GitHub"`；
+  - 两边都挂 → 返回清单那条错误当 `error`，GitHub 的说法塞进 `fallbackError`（两个原因都要看得到，别只报一个）。
+- 设置页「关于」在 `notes` 那行下面多渲染一行 `update.fallbackError`（只在 `ok:true` 时显示），免得用户以为清单坏了却看到「已是最新」。
+- 冒烟 `scripts/smoke14.mjs` 那条「清单打不开也是 200 + ok:false」后面补一条：`typeof upd3.body?.fallbackError === "string"` —— 它能证明**回退确实执行过**（本机 GitHub 是私有仓库、必然 404，所以这条同时覆盖了「两边都挂」的分支）。
+- 基线：冒烟 **449**、ui-check 129、单测 43（网页侧没加新交互，ui-check 不用动）。
+- 教训：这类「以后会变好的外部条件」不要写成一次性手工步骤（比如让用户到时候去设置页填地址），要在代码里留兜底路径——用户说过一次「以后会公开」，就当它一定会发生。

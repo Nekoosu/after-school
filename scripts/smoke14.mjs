@@ -159,6 +159,8 @@ ok("有 99.0.0 就算有新版", upd2.body?.hasUpdate === true, String(upd2.body
 await req("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ update_url: "http://127.0.0.1:1/no.json" }) });
 const upd3 = await req("/api/update");
 ok("清单打不开也是 200 + ok:false", upd3.res.status === 200 && upd3.body?.ok === false, upd3.text.slice(0, 160));
+// 清单这条路挂了会自动再问一次 GitHub（仓库公开后就能兜住），排错信息里要有这一句
+ok("清单挂了会退到 GitHub 再问一次", typeof upd3.body?.fallbackError === "string", String(upd3.body?.fallbackError));
 // 收尾：清掉测试地址，恢复走 GitHub 的默认行为
 await req("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ update_url: "" }) });
 fake.close();

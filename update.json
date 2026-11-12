@@ -1,6 +1,6 @@
 {
-  "version": "1.8.9",
-  "url": "https://github.com/Nekoosu/after-school/releases/download/v1.8.9/after-school-1.8.9.zip",
-  "notes": "默认走 Gitee 上的版本清单；设置页能手动「检查更新」。",
+  "version": "1.8.10",
+  "url": "https://github.com/Nekoosu/after-school/releases/download/v1.8.10/after-school-1.8.10.zip",
+  "notes": "清单读不到时会自动再问一次 GitHub；仓库改成公开后两条路都通。",
   "publishedAt": "2026-11-12"
 }
