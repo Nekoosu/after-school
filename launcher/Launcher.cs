@@ -934,9 +934,12 @@ namespace AfterSchool
         WebView2 view;
         NotifyIcon tray;
         ToolStripMenuItem trayInfo;
+        ToolStripMenuItem trayUpdate;
+        string updateUrl = "";
         bool navigated;
         bool allowClose;
         bool trayTipShown;
+        bool updateChecked;
 
         public AppForm(string url, Icon ico, int w, int h, int x, int y, string webviewDataDir)
         {
@@ -996,6 +999,18 @@ namespace AfterSchool
             ToolStripMenuItem backup = new ToolStripMenuItem("立即备份");
             backup.Click += delegate { BackupNow(); };
             menu.Items.Add(backup);
+
+            ToolStripMenuItem upd = new ToolStripMenuItem("下载新版本");
+            upd.Visible = false;
+            upd.Click += delegate
+            {
+                if (!string.IsNullOrEmpty(updateUrl))
+                {
+                    try { Process.Start(updateUrl); } catch { }
+                }
+            };
+            menu.Items.Add(upd);
+            trayUpdate = upd;
 
             ToolStripMenuItem auto = new ToolStripMenuItem("开机时自动启动");
             auto.CheckOnClick = true;
@@ -1147,26 +1162,80 @@ namespace AfterSchool
                 {
                     body = sr.ReadToEnd();
                 }
-                int k = body.IndexOf("\"text\":\"");
-                if (k < 0)
-                {
-                    trayInfo.Text = "服务还没就绪";
-                    return;
-                }
-                k += 8;
-                StringBuilder sb = new StringBuilder();
-                while (k < body.Length && body[k] != '"')
-                {
-                    if (body[k] == '\\' && k + 1 < body.Length) k++;
-                    sb.Append(body[k]);
-                    k++;
-                }
-                trayInfo.Text = sb.ToString();
+                string text = PickString(body, "text");
+                trayInfo.Text = text.Length > 0 ? text : "服务还没就绪";
             }
             catch
             {
                 trayInfo.Text = "服务不在跑";
             }
+        }
+
+        /// <summary>从 JSON 里抠一个字符串字段（C# 5 没有 JSON 库，服务端也不转义中文，够用）。</summary>
+        static string PickString(string json, string key)
+        {
+            if (string.IsNullOrEmpty(json)) return "";
+            int k = json.IndexOf("\"" + key + "\":\"");
+            if (k < 0) return "";
+            k += key.Length + 4;
+            StringBuilder sb = new StringBuilder();
+            while (k < json.Length && json[k] != '"')
+            {
+                if (json[k] == '\\' && k + 1 < json.Length) k++;
+                sb.Append(json[k]);
+                k++;
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>启动后问一次 GitHub 有没有新版本；有就弹个气泡，并在托盘菜单里放一个下载入口。</summary>
+        void CheckUpdateInBackground()
+        {
+            try
+            {
+                Thread t = new Thread(delegate()
+                {
+                    try
+                    {
+                        Thread.Sleep(2500);
+                        HttpWebRequest req = (HttpWebRequest)WebRequest.Create(startUrl + "api/update");
+                        req.Timeout = 12000;
+                        req.ReadWriteTimeout = 12000;
+                        req.Proxy = null;
+                        req.UserAgent = "AfterSchoolShell";
+                        string body = "";
+                        using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
+                        using (StreamReader sr = new StreamReader(res.GetResponseStream(), Encoding.UTF8))
+                        {
+                            body = sr.ReadToEnd();
+                        }
+                        if (body.IndexOf("\"hasUpdate\":true") < 0) return;
+                        string latest = PickString(body, "latest");
+                        string url = PickString(body, "url");
+                        if (latest.Length == 0 || url.Length == 0) return;
+                        updateUrl = url;
+                        try
+                        {
+                            BeginInvoke((Action)delegate
+                            {
+                                if (trayUpdate != null)
+                                {
+                                    trayUpdate.Text = "下载新版本 " + latest;
+                                    trayUpdate.Visible = true;
+                                }
+                                if (tray != null) tray.Text = "课后服务管理（有 " + latest + " 可更新）";
+                                Balloon("有新版本 " + latest, "右键托盘图标选「下载新版本」，或者不管它，旧版照常用。");
+                            });
+                        }
+                        catch { }
+                    }
+                    catch { }
+                });
+                t.IsBackground = true;
+                t.Name = "update-check";
+                t.Start();
+            }
+            catch { }
         }
 
         /// <summary>托盘菜单「立即备份」：请服务端现在存一份快照到 app\backups。</summary>
@@ -1281,6 +1350,11 @@ namespace AfterSchool
                     {
                         navigated = true;
                         view.Visible = true;
+                        if (!updateChecked)
+                        {
+                            updateChecked = true;
+                            CheckUpdateInBackground();
+                        }
                     }
                 };
 

@@ -699,6 +699,7 @@ export default function SettingsPage() {
                   </div>
                   <div className="row between">
                     <span className="muted">新版本</span>
+                    {/* 只显示：有新版给按钮；查到但没新版说一句；查不到（404/限流/断网）把原因带出来 */}
                     {update?.ok && update.hasUpdate ? (
                       <a
                         className="btn btn-sm btn-primary"
@@ -711,7 +712,7 @@ export default function SettingsPage() {
                       </a>
                     ) : (
                       <span className="fs-sm muted">
-                        {update?.ok ? "已是最新" : "没查到（可能没联网）"}
+                        {update?.ok ? "已是最新" : (update?.error || "没查到（可能没联网）")}
                       </span>
                     )}
                   </div>

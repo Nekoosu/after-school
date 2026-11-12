@@ -18,6 +18,14 @@ export async function GET() {
       headers: { Accept: "application/vnd.github+json", "User-Agent": "after-school" },
       cache: "no-store",
     });
+    if (res.status === 404) {
+      // 私有仓库匿名查不到，或仓库里还没发过任何 release：两种都按「查不到」处理，
+      // 但把原因说清楚，别让用户以为自己断网了。
+      return Response.json(
+        { ok: false, error: "仓库还没公开或还没发过版本（GitHub 返回 404）" },
+        { status: 200 },
+      );
+    }
     if (!res.ok) {
       return Response.json({ ok: false, error: `GitHub 返回 ${res.status}` }, { status: 200 });
     }

@@ -672,6 +672,14 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 2. **最大化也记住**：`window.txt` 前面加 `M`（如 `M1320x900+300+70`）记「上次是最大化关的」，尺寸位置照旧存**还原后**的矩形（`FormClosed` 里最大化时用 `RestoreBounds`，别用 `Bounds`——那是整块屏幕），下次启动 `WindowState = Maximized` 直接铺开。
 3. **单实例不再弹窗**：第二实例唤不回窗口（对方还在启动）就静默退出。实测同标题窗口数 = 1，不再出现「课后服务管理已在运行」的对话框。
 
+### 1.8.4 加的东西
+
+**开机后自己查一次有没有新版本**：`AppForm` 第一次 `NavigationCompleted` 之后起一个后台线程（`CheckUpdateInBackground`，`Thread.Sleep(2500)` 再请求，避免和启动抢带宽），打 `startUrl + "api/update"`（`Timeout = 12000`、`UserAgent = "AfterSchoolShell"`、`Proxy = null`），`body.IndexOf("\"hasUpdate\":true") >= 0` 才继续——**只认字符串，不解析 JSON**（C# 5 没库；`api/update` 失败时也返回 `{ok:false}`，不抛 500，所以这里不会误报）。命中就 `BeginInvoke` 回 UI 线程：托盘菜单里那个默认 `Visible = false` 的「下载新版本」变成「下载新版本 1.8.x」并显出来、图标 `Text` 加「（有 1.8.x 可更新）」、弹一次性气泡；点菜单项 `Process.Start(updateUrl)` 交给系统浏览器。没有新版时菜单项一直藏着，**不会打扰**。
+
+- 抠 JSON 的公用小函数：`static string PickString(string json, string key)`（找 `"key":"` 再扫到下一个 `"`，处理 `\\`），托盘小账和版本检查都用它。
+- **私有仓库查不到**：`api.github.com/repos/.../releases/latest` 对私有仓库匿名请求一律 **404**（带 token 才 200）。`/api/update` 对 404 单独给一句「仓库还没公开或还没发过版本（GitHub 返回 404）」，设置页直接把 `update.error` 显示出来，别再写「可能没联网」误导人。**要这条功能真正生效，仓库得是公开的。**
+- 测试提示：直接跑当前版本时 `hasUpdate` 一定是 `false`（GitHub 上最新就是它），想验「有新版」这条路径，得临时把 `src/lib/version.ts` 改成更小的号重新 `next build`。
+
 ### 验证基线（1.8.3）
 
 - 441 项接口冒烟 / 121 项点击检查 / 43 个单元测试；打包 exe 43,520 字节。
