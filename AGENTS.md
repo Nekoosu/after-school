@@ -684,3 +684,19 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 
 - 441 项接口冒烟 / 121 项点击检查 / 43 个单元测试；打包 exe 43,520 字节。
 - 实测：空库托盘句 = 「今天没课」；最大化关 → `window.txt = M1320x900+300+70` → 重开直接 1936x1056（= 屏幕工作区加边框）；托盘唤回 0 秒、无弹窗；`--quit` 干净退出、`wal` 归零。
+
+## 37. 空账本引导（1.8.5）
+
+新用户第一次打开看到的是四个「今天没有…」的空卡，不知道从哪下手。这版在首页加一张「先做这四件事」的卡。
+
+- 新接口 `src/app/api/setup/route.ts`（GET，只读）：数 `course`（active）、`student`（active）、`lesson`（全部）三张表 + 判断 `org_name` 有没有改过，返回 `{courses, students, lessons, steps[{key,label,hint,href,done}], doneCount, done, hidden}`。
+- **`org_name` 的「填过」要跟默认值比**：空库种子就是「我的课后服务中心」，只判 `!== ""` 永远算填过，卡片会少一步。常量 `ORG_DEFAULT` 写在 route 里，改种子记得一起改。
+- 步骤的 href 全走既有入口：`/settings`、`/classes`、`/students?new=1`、`/calendar?new=1`（`?new=1` 由 `useAutoNew` 打开弹窗）。
+- 首页 `src/app/page.tsx`：多拉一个 `/api/setup`，`setup && !setup.done && !setup.hidden` 时在 `.quick-grid` **之前**渲染 `.onboard`。样式复用 `globals.css` 里原有的「空库引导」段，扩了 `.onboard-step .os-body`、`.onboard-step.done`（绿底 + 打勾）、`.onboard-foot`，深色补 `color-mix(in srgb, var(--ok) 12%, var(--surface-2))`。
+- 「不再显示」= `patch("/api/settings", { onboard_hidden: "1" })`，同时本地 state 立刻置 `hidden: true`——**别等请求回来再藏**，网络慢时点一下没反应很像坏了。`onboard_hidden` 不用加进 `ddl.ts` 的种子（`setting(key, fallback)` 自带默认）。
+
+### 验证基线（1.8.5）
+
+- **444 项接口冒烟 / 127 项点击检查 / 43 个单元测试**；`smoke2` 加 4 条 `/api/setup` 断言（四步、认得已填项、`hidden` 落库、随后复位成 `"0"` 免影响后面的冒烟）。
+- ui-check 新增 `[0]` 场景 6 条（卡在、四步、打勾数 ≥1、有「不再显示」、点了就收、设置里记下 `onboard_hidden=1`）。**这个场景必须排在 `[1] 建学生` 之后**：卡是否显示取决于库里的数据，「有学生没课」时才既显示又打勾。
+- 小坑：`[23]` 那条「设置页有新版本一栏」的断言原来只认「已是最新 / 没查到」，1.8.4 把 404 文案改成「仓库还没公开…」之后它就红了——**断言要跟着文案走**，多认一个「还没公开」。

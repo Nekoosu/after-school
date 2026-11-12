@@ -198,6 +198,37 @@ async function main() {
     let students = await getJson("/api/students");
     ok("学生已写入", students.some((s) => s.name === "小夏"), JSON.stringify(students.map((s) => s.name)));
 
+    console.log("\n[0] 空账本引导卡（首页）");
+    await goto("/", "今天");
+    await sleep(1200);
+    // 首页这时候学生已经建好（[1] 在前），但课还没排 → 引导卡应该还在，且「加第一个学生」是打勾状态
+    const ob = JSON.parse(
+      String(
+        await evalJS(`return JSON.stringify((() => {
+          const card = document.querySelector(".onboard");
+          if (!card) return { card: false };
+          const steps = [...card.querySelectorAll(".onboard-step")];
+          return {
+            card: true,
+            steps: steps.length,
+            doneSteps: card.querySelectorAll(".onboard-step.done").length,
+            text: card.querySelector(".onboard-foot span")?.textContent || "",
+            hasHide: !!card.querySelector(".onboard-foot button"),
+          };
+        })());`),
+      ),
+    );
+    ok("首页有引导卡（因为课还没排）", ob.card === true, JSON.stringify(ob));
+    ok("引导卡正好四步", ob.steps === 4, `steps = ${ob.steps}`);
+    ok("已完成的步骤打了勾（机构没改、学生已建）", ob.doneSteps >= 1, `done = ${ob.doneSteps}`);
+    ok("有「不再显示」按钮", ob.hasHide === true);
+    await evalJS(`return (() => { document.querySelector(".onboard-foot button").click(); return true; })();`);
+    await sleep(700);
+    const obGone = await evalJS(`return !document.querySelector(".onboard");`);
+    ok("点了「不再显示」卡片就收起来", obGone === true);
+    const savedSetting = (await getJson("/api/settings")).onboard_hidden;
+    ok("「不再显示」记进了设置（下次进来也不弹）", savedSetting === "1", `onboard_hidden = ${savedSetting}`);
+
     console.log("\n[2] 排课：一门课都没有时直接建课（这次修的 bug）");
     await goto("/calendar", "排课");
     await evalJS(clickText("排课"));
@@ -684,6 +715,7 @@ async function main() {
       aboutText.includes("新版本") &&
       (aboutText.includes("已是最新") ||
         aboutText.includes("没查到") ||
+        aboutText.includes("还没公开") ||
         /有 \d+\.\d+\.\d+ 可用/.test(aboutText));
     ok("设置页「关于」里有新版本一栏", hasUpdateRow, hasUpdateRow ? "ok" : "缺少新版本一栏");
 

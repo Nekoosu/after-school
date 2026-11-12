@@ -47,6 +47,28 @@ async function main() {
   const set1 = await j("PATCH", "/api/settings", { org_name: "测试中心", low_balance_minutes: "450" });
   ok("settings PATCH", set1.status === 200 && set1.data?.saved >= 2, JSON.stringify(set1.data).slice(0, 80));
 
+  // 空账本引导（首页那张「先做四件事」的卡）
+  const setup1 = await j("GET", "/api/setup");
+  ok(
+    "setup GET 给出四步",
+    setup1.status === 200 && Array.isArray(setup1.data?.steps) && setup1.data.steps.length === 4,
+    JSON.stringify(setup1.data ?? {}).slice(0, 100),
+  );
+  ok(
+    "setup 认得机构名字和学生已经填了",
+    setup1.data?.steps?.find((s) => s.key === "org")?.done === true &&
+      setup1.data?.steps?.find((s) => s.key === "student")?.done === true,
+    JSON.stringify(setup1.data?.steps ?? []).slice(0, 160),
+  );
+  const hideOnboard = await j("PATCH", "/api/settings", { onboard_hidden: "1" });
+  const setup2 = await j("GET", "/api/setup");
+  ok(
+    "setup 记下「不再显示」",
+    hideOnboard.status === 200 && setup2.data?.hidden === true,
+    `hidden=${setup2.data?.hidden}`,
+  );
+  await j("PATCH", "/api/settings", { onboard_hidden: "0" });
+
   // 收款（自动充课时）
   const pay = await j("POST", "/api/payments", { studentId: sid, amount: 1200, minutes: 540, method: "wechat", remark: "秋季班" });
   ok("payment POST", pay.status === 200 && pay.data?.balance_minutes === 540, JSON.stringify(pay.data).slice(0, 120));

@@ -6,7 +6,7 @@ import { Icon } from "@/components/icons";
 import { MakeupModal, type MakeupTarget } from "@/components/MakeupModal";
 import { Sparkline } from "@/components/Sparkline";
 import { Avatar, Badge, Card, Empty, PageLoading, Section, Stat, useToast } from "@/components/ui";
-import { api, copyText } from "@/lib/client";
+import { api, copyText, patch } from "@/lib/client";
 import {
   LESSON_STATUS_CN,
   NOTE_KIND_CN,
@@ -63,6 +63,25 @@ interface StaleItem {
   last_lesson_at: string | null;
 }
 
+interface SetupStep {
+  key: string;
+  label: string;
+  hint: string;
+  href: string;
+  done: boolean;
+}
+
+interface Setup {
+  courses: number;
+  students: number;
+  lessons: number;
+  orgName: string;
+  steps: SetupStep[];
+  doneCount: number;
+  done: boolean;
+  hidden: boolean;
+}
+
 interface Dashboard {
   date: string;
   todayLessons: LessonItem[];
@@ -110,6 +129,7 @@ export default function TodayPage() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [teacher, setTeacher] = useState("");
   const [err, setErr] = useState("");
+  const [setup, setSetup] = useState<Setup | null>(null);
   const [makeupTarget, setMakeupTarget] = useState<MakeupTarget | null>(null);
 
   const load = useCallback(() => {
@@ -123,7 +143,20 @@ export default function TodayPage() {
     api<Record<string, string>>("/api/settings")
       .then((s) => setTeacher(s.teacher_name ?? ""))
       .catch(() => {});
+    api<Setup>("/api/setup")
+      .then(setSetup)
+      .catch(() => {});
   }, [load]);
+
+  // 「不再显示」只藏卡片，不删数据；哪天又想看，设置里点一下就回来
+  async function hideOnboard() {
+    setSetup((s) => (s ? { ...s, hidden: true } : s));
+    try {
+      await patch("/api/settings", { onboard_hidden: "1" });
+    } catch {
+      /* 藏起来这件事失败就算了，下次进来还会看到 */
+    }
+  }
 
   if (err) return <div className="error-box">加载失败：{err}</div>;
   if (!data) return <PageLoading />;
@@ -210,6 +243,40 @@ export default function TodayPage() {
           </div>
         </div>
       </div>
+
+      {setup && !setup.done && !setup.hidden && (
+        <div className="onboard" style={{ marginBottom: 14 }}>
+          <h3>先把这四件事做了，后面都是顺的</h3>
+          <p>
+            现在是个空账本。填个机构名字、建一门课、加第一个学生、排一节课，
+            课时、反馈、月报这些就都自动跟着走了。
+          </p>
+          <div className="onboard-steps">
+            {setup.steps.map((s, i) => (
+              <Link
+                key={s.key}
+                href={s.href}
+                className={"onboard-step" + (s.done ? " done" : "")}
+              >
+                <span className="idx">{s.done ? <Icon name="check" size={12} /> : i + 1}</span>
+                <span className="os-body">
+                  <b>{s.label}</b>
+                  <em>{s.hint}</em>
+                </span>
+              </Link>
+            ))}
+          </div>
+          <div className="onboard-foot">
+            <span>
+              已经做了 {setup.doneCount}/{setup.steps.length}
+              {setup.students > 0 && setup.lessons === 0 ? "　·　下一步：去排第一节课" : ""}
+            </span>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={hideOnboard}>
+              不再显示
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="quick-grid">
         <Link href="/calendar?new=1" className="quick-tile">
