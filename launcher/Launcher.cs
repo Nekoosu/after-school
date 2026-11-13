@@ -279,6 +279,9 @@ namespace AfterSchool
                     return;
                 }
 
+                // `--quit` 但没有另一份在跑：没什么可退出的，安静走开（别白开一个窗口）
+                if (args.Length > 0 && args[0] == "--quit") return;
+
                 // 已经有一份在跑：直接开窗口，不再起第二个
                 int running = ReadPortFile();
                 if (running > 0 && Health(running))

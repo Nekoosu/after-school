@@ -807,3 +807,18 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 - 试用记录写 `data\trial.json`（`{start, seen, sig}`，`sig = HMAC(TRIAL_SECRET, machine + start + seen)`）：删文件就重新给 7 天（本地校验挡不住「删文件重置」，这是买断制下能接受的口子）；`now < seen - 30min` 视为时间回拨，按 `seen` 算，防「把系统时间调回去」。`data\license.json` 与 `data\trial.json` 都在 `.gitignore` 里。
 - 验证：**`Invoke-WebRequest -Headers @{Cookie=…}` 不会发 Cookie**，验 Cookie 那条要用 `curl.exe -H "Cookie: as_gate=…"`；闸门手工验法见 §45 上文（无凭证 403、带 `x-as-gate` 或 Cookie 200）。
 - **基线（1.8.13）**：冒烟 **454**、ui-check **133**、单测 **43**。
+## 46. 安装包与「一码两台」（1.8.14）
+
+用户说「能做安装包吗或者别的什么」——这次把 dist 从「一个能双击的文件夹」变成「一个能装进系统的软件」，同时把发码脚本真正支持到两台设备。
+
+- **安装器不打包、只复制**：`launcher\Installer.cs`（C# 5 WinForms，`/target:winexe /platform:anycpu`）读**自己所在目录**，把 `AfterSchool.exe`、`app\`（整棵 `.next` + `node_modules` + `node.exe`）、三个 WebView2 dll、`使用说明.txt`、`卸载.exe` 复制到 `%LOCALAPPDATA%\课后服务管理`。**故意不用 zip 解压**：.NET 4.0 没有 `ZipFile`（要 `System.IO.Compression.FileSystem` + 4.5），而且安装包本身就是「一个已经能跑的目录」，复制比解压稳。
+- 三件事装完才算装好：① 桌面 `课后服务管理.lnk` + 开始菜单同名 lnk（外加一条指向 `使用说明.txt` 的）——走 `WScript.Shell` 的 COM 晚绑定（`Type.GetTypeFromProgID("WScript.Shell")` + `InvokeMember`），不引 Interop；② `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\AfterSchool`（DisplayName/DisplayVersion/Publisher/DisplayIcon/InstallLocation/UninstallString/QuietUninstallString/NoModify/NoRepair/EstimatedSize），这样「设置 → 应用」里能看见、能卸；③ `app\data` 先建好，第一次打开就有地方写库。
+- **版本号只有一个来源**：`src\lib\version.ts` 的 `APP_VERSION`。`scripts\package.ps1` 第一步就正则读它，然后 ① 替换运行期 `package.json` 的 version（以前硬编码 1.1.0，早就过期了）、② 把 `Installer.cs` 里的占位符 `__VER__` 替换成真实版本再编译。**别在别处再写死版本号**；`dist` 里没有 version.txt，要查版本就看 exe 属性或安装器窗口标题（诊断可以按 UTF-16LE 字节在 exe 里搜 `1.8.14`）。
+- **安装器命令行**：`安装.exe`（向导）、`安装.exe --silent`（默认目录静默装，自动测试用）、`/D=目录` 或 `--dir=目录` 指定路径。安装前会先问「装过了要覆盖吗」，并用 `AfterSchool.exe --quit` 把在跑的实例叫停——不然 `AfterSchool.exe` 被占用，`File.Copy` 直接抛异常。
+- **卸载器**（`launcher\Uninstaller.cs`）：`卸载.exe` / `--silent`。顺序是 先 `--quit` 让账本 checkpoint + 自动备份 → 删两个 lnk（桌面、开始菜单）→ `DeleteSubKeyTree` 删卸载登记 → 只杀**装在 app 目录下**的 `node.exe`（按 `MainModule.FileName` 前缀判断，别误伤别处的 node）→ `cmd /c ping -n 4 127.0.0.1 >nul & rd /s /q "<dir>"` 延时自删。**exe 正在运行没法删自己所在目录**，那个 ping 就是在等它退出。
+- 卸载前有数据（`app\data\app.db` > 30000 字节）会先问「要不要把账本存一份到桌面」，文件名 `课后服务管理-账本备份-yyyyMMdd-HHmm.db`。**别默认静默删数据**——账本是别人的命。
+- **一码两台**：`scripts\make-cdk.mjs` 现在吃 `机器码1 [机器码2]`（空格、逗号、分号、顿号都行），**去重后超过两个直接报错退出**，payload 里用逗号连写，`license.ts` 的 `verifyCdk` 本来就 `machines.includes(m)` + `seats = machines.length`，所以服务端一行没改。**发码脚本以前的坑**：只读 `args[0]` 再按逗号切，用户按用法行写成空格分隔时第二个机器码被**静默丢掉**，看着签了俩其实只绑一台——这类「静默丢参数」最危险，宁可报错。
+- **实测安装链**（`--silent` 走一遍，别用 UI 自动化点按钮）：解压 zip 到临时目录 → `安装.exe --silent` → 查目标目录有没有 `AfterSchool.exe`/`app\node.exe`/`卸载.exe`、桌面与开始菜单 lnk 在不在、注册表 `DisplayVersion` 对不对 → 起装好的 exe 读 `/api/health` 确认 `version` → `卸载.exe --silent` → 等 8 秒后查目录/lnk/注册表全空。
+- **`--quit` 在没有实例时会白开一个窗口（本轮真 bug）**：`--quit` 只在「第二个实例」那条分支里发退出信号（`ActivateExisting(true)` → `quitEvent.Set()`）；如果当时根本没有实例，它拿走互斥量、走正常启动，**开出一个真窗口**。后果是卸载流程自己制造了一个「软件还开着」的死结：`卸载.exe` 起 `AfterSchool.exe --quit` → 冒出窗口 → `GetProcessesByName("AfterSchool")` 非空 → 卸载直接返回失败（`--silent` 下还静默失败，表现为「卸载没反应、目录还在」）。修法两处一起：① `Launcher.cs` 在拿到 `firstInstance` 之后加 `if (args[0] == "--quit") return;`（没什么可退的就安静走开）；② `Uninstaller.cs` 先判有没有在跑的实例再发 `--quit`，万一还不退就 `CloseMainWindow()` → 3 秒 → `Kill()`，别让目录留着删不掉。
+- **`Start-Process -Wait` 会连子孙进程一起等**：卸载器内部起 `cmd /c ping … & rd /s /q`、又起 `AfterSchool.exe --quit`，这些子进程活着时 `-Wait` 不返回（实测卡了 234 秒才回来，还是因为我手工杀掉了那个窗口）。验这类「自己会派生子进程」的 exe，用 `-PassThru` + 自己轮询 `HasExited`，别用 `-Wait`。
+- **基线（1.8.14）**：冒烟 **454**、ui-check **133**、单测 **43**；dist 多了 `安装.exe`（约 23 KB）与 `卸载.exe`（约 16 KB）。

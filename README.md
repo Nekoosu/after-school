@@ -56,15 +56,35 @@
 
 **下载**：[最新版本](https://github.com/Nekoosu/after-school/releases/latest)
 
-- Windows：拿 `after-school-<版本号>.zip`（例如 `after-school-1.8.8.zip`）
+- Windows：拿 `after-school-<版本号>.zip`（例如 `after-school-1.8.14.zip`）
 
-**Windows**
+解压后有两种用法，看你想不想「装」：
 
-1. 解压到任意目录（比如 `D:\课后服务`），里面是 `AfterSchool.exe`、`app\`、`使用说明.txt` 三样，缺一不可、要放在一起。
-2. 双击 `AfterSchool.exe`。先弹出一块深色的**启动画面**（图标、标题、一条来回扫的进度条，它在动就说明服务还活着），几秒后淡出，然后出现**一个没有地址栏、没有标签页的窗口——那就是软件本身**（不是浏览器）。把窗口关掉就等于退出：它会先把数据写盘、再留一份自动备份，后台服务一起停。
-3. 数据在 `app\data\app.db`，备份在 `app\backups\`，整个目录拷走就是完整迁移。
+**① 装成软件（推荐）**：双击 `安装.exe` → 点「开始安装」→ 装到 `%LOCALAPPDATA%\课后服务管理`，
+桌面和开始菜单里就会出现「课后服务管理」。卸载走 Windows 设置 →「应用」→ 课后服务管理，
+或者跑安装目录里的 `卸载.exe`（卸载前会问要不要先把账本备份到桌面）。
+
+**② 免安装**：双击 `AfterSchool.exe` 直接跑，整个目录拷走就是完整迁移。
+
+不管哪种，打开时都会先弹出一块深色的**启动画面**（图标、标题、一条来回扫的进度条，它在动就说明服务还活着），
+几秒后淡出，然后出现**一个没有地址栏、没有标签页的窗口——那就是软件本身**（不是浏览器）。
+把窗口关掉只是收进托盘，托盘图标右键「退出」才真的退出：它会先把数据写盘、再留一份自动备份，后台服务一起停。
+
+数据在 `app\data\app.db`，备份在 `app\backups\`。
 
 只监听 `127.0.0.1`，同一局域网的其它电脑打不开——这是有意的。
+
+## 授权（试用 7 天，然后一个码）
+
+第一次打开就有 **7 天试用**，功能一点不缩水，顶栏下只多一条「试用版：还剩 N 天」。
+
+试用到期后，桌面壳会弹一个「这台电脑还没激活」的窗口，上面是这台电脑的 **16 位机器码**（可以复制）。
+把机器码发给作者，换回一个 `AS1.` 开头的激活码，粘进去点「激活」就行：
+
+- 一个码最多绑 **两台** 电脑（两台机器码一起签，见 `scripts/make-cdk.mjs`）；第三台会验不过；
+- 码里写死了机器码，换电脑必须另要一个；
+- 激活后**完全离线**：只在本机 `app\data\license.json` 记一笔，不联网、不上报；
+- 桌面程序会给数据接口发一个随机 `AS_GATE`，所以**用浏览器直连 `127.0.0.1:3210` 界面能开、数据是空的**。
 
 ## 从源码运行
 
@@ -78,7 +98,7 @@ pnpm build
 pnpm test         # 43 个单元测试
 ```
 
-打包成免安装桌面版：
+打包成免安装桌面版 + 安装包（1.8.14 起 dist 里多 `安装.exe`、`卸载.exe`）：
 
 ```powershell
 # Windows：产出 dist\AfterSchool.exe + dist\app\（约 415 MB）
@@ -98,6 +118,20 @@ Compress-Archive -Path dist\* -DestinationPath release\windows\after-school-1.8.
 然后传到 GitHub Releases，tag 用 `v1.8.8`、文件名按 `项目名-版本号.zip`：
 Windows 是 `after-school-1.8.8.zip`。
 以后每个版本都按这套命名，下载链接永远指向 [releases/latest](https://github.com/Nekoosu/after-school/releases/latest)。
+
+## 发激活码（作者自己用）
+
+买家把激活窗口上的机器码发来之后：
+
+```powershell
+# 一台电脑
+& "C:\Program Files\nodejs\node.exe" scripts\make-cdk.mjs <机器码1>
+# 一个码绑两台（空格或逗号都行；给三个会直接报错）
+& "C:\Program Files\nodejs\node.exe" scripts\make-cdk.mjs <机器码1> <机器码2>
+```
+
+输出一整行 `AS1.…`，原样发回去即可。签名私钥在 `.keys\cdk-private.pem`（`.gitignore` 里，不进仓库也不进安装包），
+公钥写死在 `src/lib/license.ts`；验签、试用计时全在本机完成，不需要任何服务器。
 
 ## 版本清单（不开源也能查更新）
 
@@ -134,7 +168,7 @@ GitHub 那边通了就把结果带回来，并在设置页写明「清单没读�
 - **Next.js 15** App Router + **React 19**，页面全部客户端渲染，接口全部 `force-dynamic`
 - **SQLite**（better-sqlite3），14 张表 + 2 个视图，课时用流水账（`hours_ledger`），余额永远是 `SUM(delta_minutes)`；`synchronous=FULL`，断电或强杀都不丢已提交的数据
 - **手写 CSS** 设计系统（约 4690 行，30 个分区），无 UI 库、无 Tailwind、无 ORM
-- 53 个接口、20 个页面、43 个单元测试、451 项接口冒烟、133 项真实浏览器点击检查
+- 53 个接口、20 个页面、43 个单元测试、454 项接口冒烟、133 项真实浏览器点击检查
 
 ## 目录
 

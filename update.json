@@ -1,6 +1,6 @@
 {
-  "version": "1.8.13",
-  "url": "https://github.com/Nekoosu/after-school/releases/download/v1.8.13/after-school-1.8.13.zip",
-  "notes": "第一次打开有 7 天试用；试用到期后需要用激活码激活（一个码对应一台电脑）。数据不再对浏览器直连开放。",
-  "publishedAt": "2026-11-12"
+  "version": "1.8.14",
+  "url": "https://github.com/Nekoosu/after-school/releases/download/v1.8.14/after-school-1.8.14.zip",
+  "notes": "多了个安装包：双击「安装.exe」就装进系统（桌面和开始菜单都有），卸载走 Windows 设置→应用。一个激活码现在最多能绑两台电脑。",
+  "publishedAt": "2026-11-13"
 }

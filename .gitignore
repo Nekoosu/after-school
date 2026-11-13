@@ -22,3 +22,4 @@ release/
 
 # CDK 签名私钥（绝不能进仓库/安装包）
 .keys/
+.tmp/
