@@ -33,6 +33,8 @@ New-Item -ItemType Directory -Path $app -Force | Out-Null
 Step "3/9 copy build output"
 Copy-Item -Recurse -Force (Join-Path $root ".next") (Join-Path $app ".next")
 if (Test-Path (Join-Path $app ".next\cache")) { Remove-Item -Recurse -Force (Join-Path $app ".next\cache") }
+# route-cache = next start 预渲染过的页面快照，会引用上一版 chunk 名；打进包里会让装好的软件显示旧界面
+if (Test-Path (Join-Path $app ".next\server\route-cache")) { Remove-Item -Recurse -Force (Join-Path $app ".next\server\route-cache") }
 Copy-Item -Recurse -Force (Join-Path $root "public") (Join-Path $app "public")
 
 Step "4/9 write runtime package.json + next.config.js"

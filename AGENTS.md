@@ -906,3 +906,23 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
   2. 只勾保留 → 关闭后只剩 `app\data\app.db`，`卸载.exe` 被延时删掉。
   3. 保留 + 备份 → 目录只剩 `app.db`，桌面多一份 `课后服务管理-账本备份-yyyyMMdd-HHmm.db`（40,000 字节）。
 - **截图**：`.tmp\installer-test\un-keep-7-checked.png`（勾选态 + 清单第三行变化）、`un-keep-8-done.png`（保留路径完成页）。
+
+## 53. 激活窗里的邮箱不再走 `mailto:`，改成「点一下复制」（1.0.0 内）
+
+用户（m16227）：「激活码页面 点击邮箱发送不太合适 弹不出邮箱页面，改成复制按钮或者点击直接复制会好点吧？」
+
+- **`mailto:` 在桌面壳里不可靠**：WebView2 把 `mailto:` 交给系统默认邮件客户端，机器上没配（只开网页版邮箱 / 没装 Outlook）就**什么都不会发生**，用户以为按钮坏了。凡是「让系统去拉起别的程序」的入口，在自建壳里都要先怀疑。
+- **改法（`src\components\LicenseDialog.tsx`）**：删掉 `mailtoHref` 与 `<a href={mailtoHref}>`，两处复制：
+  - 机器码旁的主按钮从「复制」升级成「**复制申请内容**」= `mailBody`：标题「课后服务管理 · 申请激活码」+ `机器码：XXXXXXXX` + 「第二台电脑的机器码：（只有一台就留空）」+「发给：nekoosu2021@outlook.com」。用户粘一次就能发（微信/QQ/邮件都行），不用再自己拼。
+  - 邮箱本身做成 `<button className="license-dlg-mailbtn">`，点一下只复制地址，图标从 `copy` 变 `check`，`copiedMail` state 在打开弹窗时重置。
+- **样式**：`.license-dlg-mailbtn` 用 `--surface-2` 底 + `--line-2` 边 + `--brand-ink` 字，hover 换 `--brand-weak`/`--brand`；四个主题段都有这几个 token，不用新加变量。
+- **教训**：界面里任何「点了应该发生点什么」的入口，都要有一个**在本机就完成**的等价操作（复制），别把交互押在系统关联程序上。
+
+## 54. 装完还是旧界面：`.next\server\route-cache` 没清（1.0.0 内）
+
+改完激活窗（邮箱改复制按钮）后重打包、重装，装好的软件里**弹出来还是旧文案**（「复制」+「点邮箱直接写邮件」），排查过程与结论：
+
+- 现象链：装好的 `app\.next\static\chunks\app\` 里同时有 `layout-20cea9362da70d1e.js`（新）和 `layout-d73909c4c38cff9f.js`（旧）；页面 HTML 引用的却是**旧的** `layout-d73909c4c38cff9f.js`。`grep -r "layout-d73909c4c38cff9f" app\.next` 命中一堆 `.next\server\route-cache\APP_PAGE\<sha>\$*.html`。
+- 根因：`route-cache` 是 `next start` 跑过后留下的**预渲染页面快照**，里面写死了当时的 chunk 名。`next build` 不清它、`Copy-Item -Recurse -Force` 也不会删目标目录里已存在的文件 → 旧快照被原样带进 dist、带进安装目录，服务器优先吐快照，于是永远显示旧界面。
+- 两面修：`scripts\package.ps1` 第 3 步复制完 `.next` 后加 `Remove-Item -Recurse -Force $app\.next\server\route-cache`；`launcher\Installer.cs` 的 `Run()` 在复制前删掉 `dir\app\.next`（新增 `DeleteTree(string dir)`，只读属性先复位，`app\data` 账本不动）。
+- **排查口诀**：改了前端却「看不到变化」时，先比 `BUILD_ID`，再 grep 旧 chunk 名出现在哪个文件里——只要出现在 `route-cache`，就是这个坑，别去怀疑浏览器缓存。

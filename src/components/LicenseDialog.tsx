@@ -36,12 +36,14 @@ export function LicenseDialog({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(false);
+  const [copiedMail, setCopiedMail] = useState(false);
 
   // 每次打开都重新问一遍：可能刚在桌面壳的激活窗里激活过
   useEffect(() => {
     if (!open) return;
     setErr("");
     setCopied(false);
+    setCopiedMail(false);
     let dead = false;
     fetch("/api/license", { cache: "no-store" })
       .then((r) => r.json())
@@ -83,17 +85,33 @@ export function LicenseDialog({
   }
 
   const machine = String(state?.machine || "");
-  const mailtoHref =
-    "mailto:" +
-    AUTHOR_MAIL +
-    "?subject=" +
-    encodeURIComponent("激活码申请：课后服务管理") +
-    "&body=" +
-    encodeURIComponent(
-      (machine ? "机器码 1：" + machine.toUpperCase() + "\n" : "机器码 1：\n") +
-        "机器码 2：（第二台电脑的填这里，只有一台就留空）\n\n" +
-        "有什么想说明的写在下面这行：\n",
-    );
+  // 一次复制走完「机器码 + 第二台的占位 + 发给谁」：用户直接粘到微信 / 邮件里发出去就行
+  const mailBody = [
+    "课后服务管理 · 申请激活码",
+    "机器码：" + (machine ? machine.toUpperCase() : "（这台电脑没读到机器码）"),
+    "第二台电脑的机器码：（只有一台就留空）",
+    "发给：" + AUTHOR_MAIL,
+  ].join("\n");
+
+  async function copyMailBody() {
+    try {
+      await copyText(mailBody);
+      toast.ok("已复制，粘到微信或邮件里发给 " + AUTHOR_MAIL + " 就行");
+      setCopied(true);
+    } catch (e) {
+      toast.bad(String((e as Error)?.message || e));
+    }
+  }
+
+  async function copyMailAddr() {
+    try {
+      await copyText(AUTHOR_MAIL);
+      toast.ok("邮箱已复制：" + AUTHOR_MAIL);
+      setCopiedMail(true);
+    } catch (e) {
+      toast.bad(String((e as Error)?.message || e));
+    }
+  }
   const head =
     state?.mode === "licensed"
       ? {
@@ -136,20 +154,8 @@ export function LicenseDialog({
           {machine ? (
             <div className="license-dlg-machine">
               <code>{machine.toUpperCase()}</code>
-              <Btn
-                size="sm"
-                icon={copied ? "check" : "copy"}
-                onClick={async () => {
-                  try {
-                    await copyText(machine.toUpperCase());
-                    toast.ok("机器码已复制，发到 " + AUTHOR_MAIL + " 就行");
-                    setCopied(true);
-                  } catch (e) {
-                    toast.bad(String((e as Error)?.message || e));
-                  }
-                }}
-              >
-                {copied ? "已复制" : "复制"}
+              <Btn size="sm" icon={copied ? "check" : "copy"} onClick={copyMailBody}>
+                {copied ? "已复制" : "复制申请内容"}
               </Btn>
             </div>
           ) : (
@@ -158,8 +164,12 @@ export function LicenseDialog({
             </div>
           )}
           <div className="license-dlg-mail">
-            作者邮箱：<a href={mailtoHref}>{AUTHOR_MAIL}</a>
-            {machine ? <span className="muted">　点邮箱直接写邮件，机器码会帮你填好</span> : null}
+            作者邮箱：
+            <button type="button" className="license-dlg-mailbtn" onClick={copyMailAddr} title="点一下复制邮箱地址">
+              {AUTHOR_MAIL}
+              <Icon name={copiedMail ? "check" : "copy"} size={12} strokeWidth={2.2} />
+            </button>
+            <span className="muted">　点邮箱复制地址，粘到收件人里就行</span>
           </div>
           <div className="license-dlg-note">一个激活码最多绑两台电脑；激活以后不用联网，也不上报任何东西。</div>
         </div>

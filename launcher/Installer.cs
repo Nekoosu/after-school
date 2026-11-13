@@ -131,6 +131,11 @@ namespace AfterSchoolSetup
             err = CloseRunning(dir);
             if (err != null) throw new Exception(err);
 
+            // 覆盖安装：旧的 .next（含 route-cache 预渲染快照与上一版 chunk 名）必须先清掉，
+            // 否则装完还是旧界面、控制台报 404。app\data 账本不动。
+            string oldNext = Path.Combine(dir, "app", ".next");
+            if (Directory.Exists(oldNext)) DeleteTree(oldNext);
+
             string[] files = ListFiles(src);
             long total = 0;
             for (int i = 0; i < files.Length; i++) total += new FileInfo(files[i]).Length;
@@ -164,6 +169,26 @@ namespace AfterSchoolSetup
             try { Shortcut(Path.Combine(programs, AppName + " 使用说明.lnk"), Path.Combine(dir, "使用说明.txt"), dir); }
             catch { }
             WriteUninstallEntry(exe, dir, (int)(total / 1024));
+        }
+
+        /// <summary>删一整棵目录（只读属性先复位）；只给覆盖安装清 .next 用，失败不阻断安装。</summary>
+        static void DeleteTree(string dir)
+        {
+            try
+            {
+                foreach (string f in Directory.GetFiles(dir))
+                {
+                    try { File.SetAttributes(f, FileAttributes.Normal); } catch { }
+                    try { File.Delete(f); } catch { }
+                }
+                foreach (string d in Directory.GetDirectories(dir))
+                {
+                    try { File.SetAttributes(d, FileAttributes.Directory); } catch { }
+                    DeleteTree(d);
+                }
+                Directory.Delete(dir, false);
+            }
+            catch { }
         }
 
         /// <summary>要复制的文件：除了安装器自己，其余整个目录都要（含 app\ 与三个 WebView2 dll）。</summary>
