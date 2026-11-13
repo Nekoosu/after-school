@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
   "url": "https://github.com/Nekoosu/after-school/releases/download/v1.0.0/after-school-1.0.0.zip",
-  "notes": "第一个正式版：解压后双击「安装.exe」就装进系统；试用条右边直接能填激活码，不用等到期；一个激活码最多绑两台电脑。",
+  "notes": "第一个正式版：解压后双击「安装.exe」就装进系统；试用条右边直接能填激活码，不用等到期；机器码旁「复制申请内容」一次带走整段申请，发到 nekoosu2021@outlook.com 换码；一个码最多绑两台电脑；导出与备份的下载不再把页面弄崩；卸载时可以选保留账本数据。",
   "publishedAt": "2026-11-13"
 }
