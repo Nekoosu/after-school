@@ -393,6 +393,11 @@ async function main() {
 
     console.log("\n[13] 月报页");
     await goto("/monthly", "月报");
+    // 数据是异步来的：等明细或空态真正出现再取文本，别抓到加载中的那一帧
+    await waitFor(
+      `document.body.innerText.includes("按孩子看") || document.body.innerText.includes("这个月还没有数据")`,
+      12000
+    );
     const monthTxt = await evalJS(bodyText);
     ok("月报页有标题和说明", monthTxt.includes("月报") && monthTxt.includes("扣了多少课时"), "");
     ok("有月份选择框", (await evalJS(`return !!document.querySelector('input[type="month"]');`)) === true);
@@ -402,7 +407,20 @@ async function main() {
     await sleep(600);
     const m1 = await evalJS(`return document.querySelector('input[type="month"]').value;`);
     ok("点上月会切到上个月", String(m1) !== String(m0) && /^\d{4}-\d{2}$/.test(String(m1)), `${m0} -> ${m1}`);
-    ok("导出 CSV 指向接口", (await evalJS(`return !!document.querySelector('a[href*="format=csv"]');`)) === true);
+    // 1.0.0 起下载一律走 fetch+blob（不产生导航），导出入口是按钮，页面里不该再有指向 /api 的 <a>
+    ok(
+      "导出 CSV 是按钮，页面里没有指向 /api 的下载链",
+      (await evalJS(
+        `return !!([...document.querySelectorAll("button")].find((b) => (b.textContent || "").trim() === "导出 CSV")) && !document.querySelector('a[href*="/api/"]');`
+      )) === true
+    );
+    await evalJS(
+      `return (() => { window.__dl = []; const of = window.fetch; window.fetch = function (u) { window.__dl.push(String(u)); return of.apply(this, arguments); }; return true; })();`
+    );
+    await evalJS(clickText("导出 CSV"));
+    await sleep(900);
+    const mCsvUrl = await evalJS(`return (window.__dl || []).join("|");`);
+    ok("导出 CSV 请求的是月报接口并带上月份", /\/api\/reports\/monthly\?month=\d{4}-\d{2}&format=csv/.test(String(mCsvUrl)), String(mCsvUrl));
     ok("明细或空态二选一", monthTxt.includes("按孩子看") || monthTxt.includes("这个月还没有数据"), "");
 
     console.log("\n[14] 使用说明（内置手册）");
@@ -483,9 +501,19 @@ async function main() {
     console.log("\n[17] 课表「复制到下周」/「导出日历」/ AI「自动获取」");
     await goto("/calendar", "课表");
     ok("周视图有「复制到下周」按钮", (await evalJS(`return !!([...document.querySelectorAll("button")].find((b) => b.textContent.includes("复制到下周")));`)) === true);
-    ok("有「导出日历」下载链", (await evalJS(`return !!document.querySelector('a[href*="calendar.ics"]');`)) === true);
-    const icsHref = await evalJS(`return document.querySelector('a[href*="calendar.ics"]')?.getAttribute("href") ?? "";`);
-    ok("导出链接带上当前范围", /from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}/.test(icsHref), icsHref);
+    ok(
+      "有「导出日历」按钮（下载走 fetch+blob）",
+      (await evalJS(
+        `return !!([...document.querySelectorAll("button")].find((b) => (b.textContent || "").trim().includes("导出日历")));`
+      )) === true
+    );
+    await evalJS(
+      `return (() => { window.__dl = []; const of = window.fetch; window.fetch = function (u) { window.__dl.push(String(u)); return of.apply(this, arguments); }; return true; })();`
+    );
+    await evalJS(clickText("导出日历"));
+    await sleep(900);
+    const icsUrl = await evalJS(`return (window.__dl || []).join("|");`);
+    ok("导出日历请求带上当前范围", /calendar\.ics\?from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}/.test(String(icsUrl)), String(icsUrl));
     await goto("/settings", "设置");
     ok("AI 卡里有「自动获取」按钮", (await evalJS(`return !!([...document.querySelectorAll("button")].find((b) => b.textContent.includes("自动获取")));`)) === true);
     // 模型名现在是「输入框 / 下拉」二选一，不再靠 datalist（默认值不会挡住别的选项）

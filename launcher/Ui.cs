@@ -135,6 +135,9 @@ namespace AfterSchoolUi
 
         protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
         protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+        // 自绘控件不会因为 Text 变了就重画：装在「开始安装 → 覆盖安装」「取消 → 关闭」
+        // 这种运行期改文案的地方，少了这一句按钮上就一直是旧字。
+        protected override void OnTextChanged(EventArgs e) { base.OnTextChanged(e); Invalidate(); }
 
         public ButtonKind Kind
         {

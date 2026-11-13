@@ -864,3 +864,26 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 - **壳（兜底）**：`Launcher.cs` 加 `core.DownloadStarting`（存 Downloads、`UniquePath()` 重名加 (2)、`a.Handled=true`、完成 Balloon 提示），`NavigationCompleted` 里 `WebErrorStatus == ConnectionAborted && (UtcNow - lastDownloadUtc) < 20s` 时不弹 ErrorPage——防漏网下载。
 - **无头验证的坑**：壳起的 3210 端口带 `AS_GATE`，浏览器直连时数据接口全 403、页面只剩「刷新」——**这不是页面坏**。验证 DOM 要另起 `next start -p 3331`（装好的 app 目录、无 gate；要看试用态/机器码就先设 `$env:AS_MACHINE`）。下载实测看 `Page.downloadWillBegin` 次数 + `navigationsAfter === 0`。
 - **打包脚本的坑**：`package.ps1` 的 csc 编 `安装.exe` 时**必须把 `launcher\Ui.cs` 一起编**（`InstallForm : AfterSchoolUi.ModernForm`），漏了报 `CS0246: 未找到命名空间 AfterSchoolUi`——已经写进 csc 行，改安装器 UI 时别把它拆出去。
+
+## 51. 安装器 / 卸载器整套 UI 重写（720×480 三页，共享 Ui.cs）
+
+用户（m00166）：「安装和卸载 你找找github上有没有好的项目 优化一下ui吧 有点简陋」。
+
+- **为什么没换框架**：查了几个现成方案——`winsoft666/NSIS-UI-Plugin`（148★，Qt/DuiLib 做 NSIS 皮肤）、`SuperPat45/UltraModernUI`（36★）、`leeqia/nsNiuniuSkin`（33★，DirectUI）、`divideconcept/ModernInno`（11★，Inno Setup 皮肤）。换 Inno Setup / NSIS 等于重写 `scripts\package.ps1` 的打包链、卸载注册项、静默安装参数与自动测试链，收益只是皮肤。**决定：继续纯 WinForms 自绘，只借 Fluent / Inno 6 modern 的视觉语言，零新依赖。**
+- **新增 `launcher\Ui.cs`（约 500 行，命名空间 `AfterSchoolUi`，只依赖 System.Drawing / System.Windows.Forms，C# 5）**：
+  - `Theme`：Brand `37,99,235`、Page `246,248,252`、Ink `15,23,42`、InkSoft `71,85,105`、InkFaint `148,163,184`、Danger `220,38,38`、Success `22,163,74`；`F(size)` / `FB(size)` 统一 Microsoft YaHei UI；`RoundPath` / `FillRound` / `DrawRound` / `FillParent` / `Text`。
+  - `RoundedButton : Control, IButtonControl`（`ButtonKind` Primary / Ghost / Danger / DangerGhost，圆角 8，hover / press / 禁用 / 焦点框）。
+  - `ProgressBarEx : Control`（高 14 圆角胶囊、`Value` 0–100 平滑追赶、`IsMarquee` 往返动画、Brand→`96,165,250` 渐变）。
+  - `CardPanel : Panel`（白底圆角 12 + 描边）、`CheckBoxEx`（22×22 圆角 6，选中蓝底白勾）、`CloseButton`（✕，hover 红底）。
+  - `Dpi.Init()` 调 `SetProcessDPIAware()`；`ModernForm : Form`（无边框、圆角 `Region(14)`、`CS_DROPSHADOW`、1px 描边、右上角关闭键、`EnableDrag()` 拖标题条移动）。
+- **四个踩过的坑（改 Ui.cs 前务必看）**：
+  1. `Control` 子类设 `BackColor = Color.Transparent` 前必须 `SetStyle(... | ControlStyles.SupportsTransparentBackColor, true)`，否则构造就抛 `ArgumentException: 控件不支持透明的背景色`（`ProgressBarEx` 头一次就是这么崩的，还害得 GUI 启动两秒内静默退出）。
+  2. **`Button` / `CheckBox` 是原生 Win32 控件，`ControlStyles.UserPaint` 对它们无效**——系统照画方形底和 3D 边，自绘圆角叠在上面像套了个白框。**必须改成继承 `Control`**，`RoundedButton` 自己实现 `IButtonControl`（`PerformClick()` 里 `if (Enabled) OnClick(...)`），`CheckBoxEx` 自己存 `Checked`。
+  3. `UserPaint` 控件不会自动画父背景，圆角四角会留白：`OnPaint` 开头调 `Theme.FillParent(g, this)`；`ModernForm.OnPaint` 自己填 `Theme.Page`。
+  4. **自绘控件改 `Text` 不会自动重画**（`Control.Text` 的 setter 不发 Invalidate）：`RoundedButton` 里重写 `OnTextChanged` 调 `Invalidate()`，否则「开始安装 → 覆盖安装」「取消 → 关闭」这类运行期改文案的按钮会一直显示旧字。
+- **`Installer.cs`**：`InstallForm : AfterSchoolUi.ModernForm`，三页 `pageWelcome` / `pageWorking` / `pageDone`，顶栏 96px 渐变 + 应用图标 + 副标题 `v1.0.0`，底栏 94px 放脚注 + `[取消]`（Ghost 108×42）+ 主按钮（148×42）。进度页布局：阶段文字 + 百分比（y=100）→ 进度条（y=126, 656×14）→ 当前文件（y=150，`AutoEllipsis`）→ 提示（y=178）。完成页绿圆勾 + 「装好了」，按钮变 `[关闭]` / `[打开软件]`。**界面仍然只有描述 / 进度 / 取消**（§49 的口径没变）。
+- **`Uninstaller.cs` 全量重写（520 行）**：不再用 `MessageBox` 串联，改成确认页（安装位置卡片 + 三条红点清单：快捷方式 / 卸载登记 / 整个安装目录 + 「先把账本备份到桌面」勾选框，只在 `app\data\app.db` 存在且 >30000 字节时出现）→ 进度页（marquee + 阶段文字：正在关闭软件 / 删快捷方式 / 删卸载登记 / 删文件）→ 完成页（绿圆勾 + 「卸载完了」+ 备份文件名）。`DoUninstall` 签名改成 `internal static string DoUninstall(string dir, Action<string> stage)`（返回 null = 成功），`--silent` 路径完全不变。
+- **`scripts\package.ps1`**：安装器与卸载器**两条** csc 命令都要带 `(Join-Path $root "launcher\Ui.cs")`（§50 只补了安装器那条，这次补上卸载器，漏了打包直接 `CS0246`）。
+- **`Program.Main` 两个都要 `AfterSchoolUi.Dpi.Init()`**，否则 125% / 150% 缩放下 720×480 的窗口会被系统拉伸发虚。
+- **产物**：`dist\安装.exe` **36,864 字节**、`dist\卸载.exe` **33,280 字节**；`release\windows\after-school-1.0.0.zip` 重打（版本号仍是 1.0.0，按 §48 同版本覆盖）。
+- **验证**：截图一律用 `PrintWindow(hwnd, hdc, 2)`——`CopyFromScreen` 抓到的是未合成帧，body / foot 会露出背后窗口的内容。截图存档在 `.tmp\installer-test\`，工作区 `installer-ui\v2-*.png` 是同一份。卸载器的备份链路实测过：勾选后桌面会出现 `课后服务管理-账本备份-yyyyMMdd-HHmm.db`（40,000 字节的测试库原样拷出），`--silent` 卸载 exit=0、目录 / 快捷方式 / 注册表项全部消失。

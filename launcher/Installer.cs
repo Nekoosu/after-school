@@ -408,25 +408,25 @@ namespace AfterSchoolSetup
             pageWorking.Controls.Add(t);
 
             bar = new AfterSchoolUi.ProgressBarEx();
-            bar.Location = new Point(32, 74);
-            bar.Size = new Size(656, 12);
+            bar.Location = new Point(32, 126);
+            bar.Size = new Size(656, 14);
             pageWorking.Controls.Add(bar);
 
-            lblNow = NewLabel("正在准备…", 32, 96, 540, 22,
+            lblNow = NewLabel("正在准备…", 32, 100, 540, 22,
                 AfterSchoolUi.Theme.F(10f), AfterSchoolUi.Theme.InkSoft);
             pageWorking.Controls.Add(lblNow);
 
-            lblPct = NewLabel("0%", 600, 96, 88, 22,
+            lblPct = NewLabel("0%", 600, 100, 88, 22,
                 AfterSchoolUi.Theme.FB(10f), AfterSchoolUi.Theme.Brand);
             lblPct.TextAlign = ContentAlignment.MiddleRight;
             pageWorking.Controls.Add(lblPct);
 
-            lblFile = NewLabel("", 32, 126, 656, 22,
+            lblFile = NewLabel("", 32, 150, 656, 22,
                 AfterSchoolUi.Theme.F(8.8f), AfterSchoolUi.Theme.InkFaint);
             lblFile.AutoEllipsis = true;
             pageWorking.Controls.Add(lblFile);
 
-            Label tip = NewLabel("文件正在写入，中途可以点「取消」。", 32, 160, 656, 22,
+            Label tip = NewLabel("文件正在写入，中途可以点「取消」。", 32, 178, 656, 22,
                 AfterSchoolUi.Theme.F(8.8f), AfterSchoolUi.Theme.InkFaint);
             pageWorking.Controls.Add(tip);
         }
