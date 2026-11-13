@@ -822,3 +822,13 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 - **`--quit` 在没有实例时会白开一个窗口（本轮真 bug）**：`--quit` 只在「第二个实例」那条分支里发退出信号（`ActivateExisting(true)` → `quitEvent.Set()`）；如果当时根本没有实例，它拿走互斥量、走正常启动，**开出一个真窗口**。后果是卸载流程自己制造了一个「软件还开着」的死结：`卸载.exe` 起 `AfterSchool.exe --quit` → 冒出窗口 → `GetProcessesByName("AfterSchool")` 非空 → 卸载直接返回失败（`--silent` 下还静默失败，表现为「卸载没反应、目录还在」）。修法两处一起：① `Launcher.cs` 在拿到 `firstInstance` 之后加 `if (args[0] == "--quit") return;`（没什么可退的就安静走开）；② `Uninstaller.cs` 先判有没有在跑的实例再发 `--quit`，万一还不退就 `CloseMainWindow()` → 3 秒 → `Kill()`，别让目录留着删不掉。
 - **`Start-Process -Wait` 会连子孙进程一起等**：卸载器内部起 `cmd /c ping … & rd /s /q`、又起 `AfterSchool.exe --quit`，这些子进程活着时 `-Wait` 不返回（实测卡了 234 秒才回来，还是因为我手工杀掉了那个窗口）。验这类「自己会派生子进程」的 exe，用 `-PassThru` + 自己轮询 `HasExited`，别用 `-Wait`。
 - **基线（1.8.14）**：冒烟 **454**、ui-check **133**、单测 **43**；dist 多了 `安装.exe`（约 23 KB）与 `卸载.exe`（约 16 KB）。
+
+## 47. 对外正式版 v1.0.0（版本号归一）
+
+用户一句「这次版本定义为正式版 v1.0.0，GitHub 的 releases 都清掉，只放安装包」——1.8.x 那 22 个 release 全是内部迭代，对外只留一个正式版。
+
+- **版本号从 1.8.14 直接改成 1.0.0**（`src\lib\version.ts`），这是「对外重新起算」，不是回滚：代码一行没退。改完 `使用说明.txt` 首行、`update.json`、README 里的示例文件名一起跟着改。**只改一处仍然成立**——`package.ps1` 正则读 `APP_VERSION`，再注入运行期 `package.json` 与 `Installer.cs` 的 `__VER__`。
+- **副作用（记住，别当成 bug）**：`/api/update` 的 `compare()` 是逐段比数字，`1.0.0 < 1.8.14`，所以还装着 1.8.14 的机器查新版本时会认为「已经是最新的」。首版发布可以接受（它们本来就比 1.0.0 新）；**下一版开始按 1.0.1、1.1.0 正常递增**，别再跳号。
+- **清 release 的顺序**：先 `GET /releases?per_page=100` 拿全量 id（22 个），逐个 `DELETE /releases/{id}`（连带资产），再 `DELETE /git/refs/tags/{tag}` 把 22 个 `v1.8.x` tag 也删掉——release 删了 tag 还在，`git tag` 里会留一堆对不上号的旧标签，看着像还有历史版本。
+- **release 里只放一个 zip**：`after-school-1.0.0.zip`（133 MB 级，内含 `安装.exe`），别把 `安装.exe` 单独传上去——它要从同目录复制 `app\`，单独下载一个是装不了的（`Validate()` 会报「安装包不完整」）。GitHub 页面底部那两个「Source code (zip/tar.gz)」是自动生成的，删不掉，不用管。
+- **首版 release 正文写全功能**：正式版是给外面人看的第一眼，按 README 的功能表分块写（核心业务 / 像个软件 / 授权 / 数据在哪），比一串 commit 有用。
