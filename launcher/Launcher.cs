@@ -724,18 +724,26 @@ namespace AfterSchool
                 while (true)
                 {
                     int which = WaitHandle.WaitAny(ws);
-                    try
+                    // 信号到得早（还在启动画面里、窗口句柄还没建好）时 BeginInvoke 会抛，
+                    // 抛了不能就这么走掉——那等于把「退出」这个信号吃了，进程会一直赖着不退。
+                    // 所以这里重试，直到投递成功或者窗口确实销毁。
+                    bool posted = false;
+                    for (int attempt = 0; attempt < 120 && !posted; attempt++)
                     {
-                        f.BeginInvoke((Action)delegate
+                        try
                         {
-                            if (which == 0) f.ShowFromTray();
-                            else f.ExitApp();
-                        });
-                    }
-                    catch
-                    {
-                        // 窗口已经销毁了（真退出过程中），线程自己收工
-                        return;
+                            f.BeginInvoke((Action)delegate
+                            {
+                                if (which == 0) f.ShowFromTray();
+                                else f.ExitApp();
+                            });
+                            posted = true;
+                        }
+                        catch
+                        {
+                            if (f.IsDisposed) return;
+                            Thread.Sleep(150);
+                        }
                     }
                 }
             });

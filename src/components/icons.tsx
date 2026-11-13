@@ -69,7 +69,8 @@ export type IconName =
   | "sun"
   | "moon"
   | "panel"
-  | "mic";
+  | "mic"
+  | "key";
 
 const PATHS: Record<IconName, ReactNode> = {
   home: (
@@ -392,6 +393,14 @@ const PATHS: Record<IconName, ReactNode> = {
       <rect x="9" y="2.5" width="6" height="11" rx="3" />
       <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" />
       <path d="M12 18v3.5" />
+    </>
+  ),
+  key: (
+    <>
+      <circle cx="8" cy="15.5" r="4" />
+      <path d="M11 12.5 20 3.5" />
+      <path d="M17.2 6.3 20 9.1" />
+      <path d="M14.4 9.1l2.8 2.8" />
     </>
   ),
 };

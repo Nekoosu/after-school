@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
-  "url": "https://github.com/Nekoosu/after-school/releases/download/v1.0.0/after-school-1.0.0.zip",
-  "notes": "第一个正式版：解压后双击「安装.exe」就装进系统，桌面和开始菜单都有，卸载走 Windows 设置→应用。第一次打开有 7 天试用，一个激活码最多绑两台电脑。",
+  "version": "1.0.1",
+  "url": "https://github.com/Nekoosu/after-school/releases/download/v1.0.1/after-school-1.0.1.zip",
+  "notes": "试用那条提醒右边多了个「填激活码」按钮，不用等到期才填；顺手修了深色主题下那行字看不清的问题。",
   "publishedAt": "2026-11-13"
 }

@@ -35,6 +35,7 @@
   --ok-weak: #e7f7f0;
   --warn: #c2751a;
   --warn-weak: #fdf5e6;
+  --warn-ink: #7a4a0d;
   --bad: #dc3d43;
   --bad-weak: #fdeeee;
   --violet: #7c5cff;
@@ -2990,6 +2991,8 @@ button {
   --ok-weak: rgba(62, 207, 149, 0.13);
   --warn: #e2a75c;
   --warn-weak: rgba(226, 167, 92, 0.13);
+  /* 深色下这一条不能再用浅色的深棕 #7a4a0d：那是深字配深底，几乎看不见 */
+  --warn-ink: #f2c88d;
   --bad: #f0686e;
   --bad-weak: rgba(240, 104, 110, 0.13);
   --violet: #9d89ff;
@@ -4663,6 +4666,7 @@ html { scroll-behavior: smooth; }
     --brand-ink: #1d4ed8;
     --ok: #0f9d63;
     --warn: #c2751a;
+    --warn-ink: #7a4a0d;
     --bad: #dc3d43;
     --violet: #7c5cff;
     --cyan: #0d8fa8;
@@ -4985,4 +4989,122 @@ html {
 }
 .license-bar svg {
   flex: 0 0 auto;
+}
+/* 文字允许换行：窄窗时不会把右边的按钮挤出去或顶飞 */
+.license-bar-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.5;
+}
+/* 「填激活码」按钮（1.0.1）：同色系的小实心钮，深浅主题都由 token 决定 */
+.license-bar-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: var(--r-2);
+  border: 1px solid color-mix(in srgb, var(--warn-ink, #7a4a0d) 45%, transparent);
+  background: color-mix(in srgb, var(--warn-ink, #7a4a0d) 16%, transparent);
+  color: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+.license-bar-btn:hover {
+  background: color-mix(in srgb, var(--warn-ink, #7a4a0d) 28%, transparent);
+  border-color: color-mix(in srgb, var(--warn-ink, #7a4a0d) 70%, transparent);
+}
+.license-bar.bad .license-bar-btn {
+  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+  background: color-mix(in srgb, var(--bad) 14%, transparent);
+}
+.license-bar.bad .license-bar-btn:hover {
+  background: color-mix(in srgb, var(--bad) 26%, transparent);
+  border-color: color-mix(in srgb, var(--bad) 70%, transparent);
+}
+
+/* 激活弹窗（1.0.1）：两步走——机器码发作者 → 粘激活码 */
+.license-dlg {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.license-dlg-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-2);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--warn-ink, #7a4a0d);
+  background: var(--warn-weak);
+}
+.license-dlg-state.bad {
+  color: var(--bad);
+  background: var(--bad-weak);
+}
+.license-dlg-state svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.license-dlg-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.license-dlg-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.license-dlg-machine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--r-2);
+  border: 1px dashed var(--line-3);
+  background: var(--surface-2);
+}
+.license-dlg-machine code {
+  font-size: 15px;
+  letter-spacing: 1.5px;
+  font-weight: 600;
+  color: var(--ink);
+  word-break: break-all;
+}
+.license-dlg-machine .muted {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.license-dlg-note {
+  font-size: 12px;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+.license-dlg-code {
+  font-family: var(--mono, Consolas, monospace);
+  font-size: 13px;
+  word-break: break-all;
+  line-height: 1.5;
+}
+.license-dlg-err {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: var(--r-2);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--bad);
+  background: var(--bad-weak);
+}
+.license-dlg-err svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
 }

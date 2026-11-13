@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
 import { Menu, MenuItem, Modal } from "./ui";
 import { SearchPalette } from "./SearchPalette";
+import { LicenseDialog } from "./LicenseDialog";
 import { cn } from "@/lib/format";
 import { AUTHOR_NAME, AUTHOR_URL } from "@/lib/author";
 
@@ -172,12 +173,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(false);
   // 授权横幅：试用还剩几天 / 已锁。激活本身在桌面壳的「激活」窗口里做，这里只提醒。
   const [lic, setLic] = useState<{ mode: "licensed" | "trial" | "locked"; daysLeft: number | null } | null>(null);
+  // 「填激活码」弹窗（1.0.1）：试用条右边的按钮直接打开，不用等到期才填
+  const [licOpen, setLicOpen] = useState(false);
 
-  useEffect(() => {
+  const refreshLic = () => {
     fetch("/api/license", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => setLic(d))
       .catch(() => setLic(null));
+  };
+
+  useEffect(() => {
+    refreshLic();
   }, []);
 
   useEffect(() => {
@@ -499,15 +506,19 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <div className="main">
         <div className={cn("busybar", busy && "on")} aria-hidden="true" />
-        {/* 试用/未激活的提醒条（1.8.13）：正常激活后整条不出现 */}
+        {/* 试用/未激活的提醒条（1.8.13；1.0.1 起右边带「填激活码」按钮）：正常激活后整条不出现 */}
         {lic && lic.mode !== "licensed" ? (
           <div className={cn("license-bar", lic.mode === "locked" && "bad")}>
             <Icon name="clock" size={14} />
-            <span>
+            <span className="license-bar-text">
               {lic.mode === "trial"
-                ? `试用版：还剩 ${lic.daysLeft ?? 0} 天。到期后在桌面程序的「激活」窗口里填激活码。`
-                : "这台电脑还没激活：请用桌面程序打开，在「激活」窗口里填激活码。"}
+                ? `试用版：还剩 ${lic.daysLeft ?? 0} 天。试用期间功能不受限，到期后填激活码即可继续使用。`
+                : "这台电脑还没激活。填入作者提供的激活码即可继续使用，已录入的数据不会丢失。"}
             </span>
+            <button className="license-bar-btn" onClick={() => setLicOpen(true)} title="填激活码">
+              <Icon name="key" size={13} strokeWidth={2.2} />
+              <span>填激活码</span>
+            </button>
           </div>
         ) : null}
         <header className="topbar">
@@ -621,6 +632,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
 
       <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
+
+      <LicenseDialog open={licOpen} onClose={() => setLicOpen(false)} onLicensed={refreshLic} />
 
       <Modal open={helpOpen} onClose={() => setHelpOpen(false)} title="快捷键与常用操作">
         <div className="kbd-help">
