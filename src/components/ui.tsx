@@ -13,6 +13,7 @@ import {
 import { createPortal } from "react-dom";
 import { Icon, type IconName } from "./icons";
 import { cn, avatarColor, initial } from "@/lib/format";
+import { downloadFile } from "@/lib/client";
 
 /* ============================================================
    Toast
@@ -75,6 +76,27 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 export function useToast(): ToastApi {
   return useContext(ToastCtx);
+}
+
+/**
+ * 「点一下存下来」的小钩子：把后端附件（备份 .db、导出 CSV/JSON、月报、.ics）拉成
+ * blob 再落地，成功失败都用 toast 说一声。**别用 <a href> / window.open 直连下载地址**：
+ * WebView2 里那会变成一次「导航到附件」，导航以 ConnectionAborted 收尾，桌面壳的
+ * NavigationCompleted 会当成服务挂了、弹「后台服务还没起来」那一页（1.0.0 修）。
+ */
+export function useDownload() {
+  const toast = useToast();
+  return useCallback(
+    async (url: string, fallback?: string) => {
+      try {
+        const name = await downloadFile(url, fallback);
+        toast.ok(`已存到下载文件夹：${name}`);
+      } catch (e) {
+        toast.bad((e as Error).message);
+      }
+    },
+    [toast],
+  );
 }
 
 /* ============================================================

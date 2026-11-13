@@ -15,6 +15,7 @@ import {
   SearchInput,
   Segmented,
   Modal,
+  useDownload,
   useToast,
 } from "@/components/ui";
 import { api, post } from "@/lib/client";
@@ -71,6 +72,7 @@ function parseBulk(text: string): ParsedRow[] {
 
 export default function StudentsPage() {
   const toast = useToast();
+  const download = useDownload();
   const [rows, setRows] = useState<StudentRow[] | null>(null);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("active");
@@ -217,7 +219,10 @@ export default function StudentsPage() {
           </p>
         </div>
         <div className="page-head-actions">
-          <Btn icon="download" onClick={() => window.open("/api/export?scope=students&format=csv", "_blank")}>
+          <Btn
+            icon="download"
+            onClick={() => download("/api/export?scope=students&format=csv", "学生名册.csv")}
+          >
             导出名册
           </Btn>
           <Btn icon="upload" onClick={() => setBulkOpen(true)}>

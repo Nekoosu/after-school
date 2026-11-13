@@ -1130,6 +1130,7 @@ namespace AfterSchool
         bool trayTipShown;
         bool updateChecked;
         bool triedHome;
+        DateTime lastDownloadUtc;
 
         public AppForm(string url, Icon ico, int w, int h, int x, int y, string webviewDataDir)
         {
@@ -1471,6 +1472,21 @@ namespace AfterSchool
             catch { }
         }
 
+        /// <summary>「下载」文件夹里重名就加 (2)、(3)…，别把上一次存的文件盖掉。</summary>
+        static string UniquePath(string dir, string name)
+        {
+            string full = Path.Combine(dir, name);
+            if (!File.Exists(full)) return full;
+            string stem = Path.GetFileNameWithoutExtension(name);
+            string ext = Path.GetExtension(name);
+            for (int i = 2; i < 1000; i++)
+            {
+                full = Path.Combine(dir, stem + " (" + i.ToString() + ")" + ext);
+                if (!File.Exists(full)) return full;
+            }
+            return Path.Combine(dir, stem + "-" + DateTime.Now.ToString("HHmmss") + ext);
+        }
+
         /// <summary>从 JSON 里抠一个整数字段（<c>"pendingId":12</c>）。</summary>
         static int PickInt(string json, string key)
         {
@@ -1688,10 +1704,51 @@ namespace AfterSchool
                     try { Process.Start(a.Uri); } catch { }
                 };
 
+                // 页面里的「下载」走的是 fetch + blob + <a download>（见 src/lib/client.ts 的
+                // downloadFile）。这里接住它，存到系统「下载」文件夹，重名自动加 (2)，
+                // 下完了用气泡说一声 —— 不要弹 WebView2 自己那条下载条，那是浏览器的东西。
+                core.DownloadStarting += delegate(object s, CoreWebView2DownloadStartingEventArgs a)
+                {
+                    lastDownloadUtc = DateTime.UtcNow;
+                    try
+                    {
+                        string dir = Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+                        if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                        string name = Path.GetFileName(a.ResultFilePath);
+                        if (string.IsNullOrEmpty(name)) name = "下载";
+                        a.ResultFilePath = UniquePath(dir, name);
+                        a.Handled = true;
+                        string target = a.ResultFilePath;
+                        a.DownloadOperation.StateChanged += delegate(object s2, object e2)
+                        {
+                            try
+                            {
+                                if (a.DownloadOperation.State == CoreWebView2DownloadState.Completed)
+                                    Balloon("已保存", target);
+                            }
+                            catch
+                            {
+                                /* 气泡失败不影响下载 */
+                            }
+                        };
+                    }
+                    catch
+                    {
+                        a.Handled = false;
+                    }
+                };
+
                 core.NavigationCompleted += delegate(object s, CoreWebView2NavigationCompletedEventArgs a)
                 {
                     if (!a.IsSuccess)
                     {
+                        // 附件下载在 Chromium 里就是「一次被取消的导航」（ConnectionAborted）。
+                        // 刚下载过就别当成服务挂了 —— 留在原页面，别弹那一页错误说明。
+                        if (a.WebErrorStatus == CoreWebView2WebErrorStatus.ConnectionAborted &&
+                            navigated && (DateTime.UtcNow - lastDownloadUtc).TotalSeconds < 20)
+                            return;
+
                         // 上次那一页已经不在了、或者服务刚起来还没热：先回首页，再不行给一页说明
                         if (!triedHome && !string.IsNullOrEmpty(startPath) && startPath != "/")
                         {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Avatar, Badge, Btn, Card, CardHead, Empty, Field, PageLoading, Section, Stat } from "@/components/ui";
+import { Avatar, Badge, Btn, Card, CardHead, Empty, Field, PageLoading, Section, Stat, useDownload } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { api } from "@/lib/client";
 import { ATT_CN, LESSON_STATUS_CN, dateOnly, durationText, relTime, timeOf } from "@/lib/format";
@@ -71,6 +71,7 @@ function shiftDays(base: string, days: number): string {
 }
 
 export default function RecordsPage() {
+  const download = useDownload();
   const today = useMemo(() => dstr(new Date()), []);
   const [from, setFrom] = useState(() => shiftDays(dstr(new Date()), -29));
   const [to, setTo] = useState(today);
@@ -151,7 +152,7 @@ export default function RecordsPage() {
           <p className="page-sub">谁在什么时候上了什么课、扣了多少课时，一页查完；点一行能回去补记</p>
         </div>
         <div className="page-head-actions">
-          <Btn icon="download" onClick={() => window.open(exportUrl)}>
+          <Btn icon="download" onClick={() => download(exportUrl, "上课记录.csv")}>
             导出这张表
           </Btn>
           <a className="btn btn-primary" href="/calendar">

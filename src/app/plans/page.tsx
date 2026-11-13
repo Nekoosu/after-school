@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/icons";
 import { ImportModal } from "@/components/ImportModal";
-import { Badge, Btn, Card, CardHead, Confirm, Empty, Field, Modal, PageLoading, SearchInput, Segmented, useToast } from "@/components/ui";
+import { Badge, Btn, Card, CardHead, Confirm, Empty, Field, Modal, PageLoading, SearchInput, Segmented, useDownload, useToast } from "@/components/ui";
 import { api, del, patch, post } from "@/lib/client";
 import { durationText } from "@/lib/format";
 import { useAutoNew } from "@/lib/autoNew";
@@ -29,6 +29,7 @@ const EMPTY_FORM = { title: "", courseId: 0, topic: "", content: "", minutes: ""
 
 export default function PlansPage() {
   const toast = useToast();
+  const download = useDownload();
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [courses, setCourses] = useState<CourseLite[]>([]);
   const [q, setQ] = useState("");
@@ -183,7 +184,7 @@ export default function PlansPage() {
           </p>
         </div>
         <div className="page-head-actions">
-          <Btn icon="download" onClick={() => window.open("/api/export?scope=plans", "_blank")}>
+          <Btn icon="download" onClick={() => download("/api/export?scope=plans", "教案.json")}>
             导出
           </Btn>
           <Btn icon="upload" onClick={() => setImportOpen(true)}>

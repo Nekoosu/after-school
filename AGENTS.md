@@ -832,6 +832,35 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 - **清 release 的顺序**：先 `GET /releases?per_page=100` 拿全量 id（22 个），逐个 `DELETE /releases/{id}`（连带资产），再 `DELETE /git/refs/tags/{tag}` 把 22 个 `v1.8.x` tag 也删掉——release 删了 tag 还在，`git tag` 里会留一堆对不上号的旧标签，看着像还有历史版本。
 - **release 里只放一个 zip**：`after-school-1.0.0.zip`（133 MB 级，内含 `安装.exe`），别把 `安装.exe` 单独传上去——它要从同目录复制 `app\`，单独下载一个是装不了的（`Validate()` 会报「安装包不完整」）。GitHub 页面底部那两个「Source code (zip/tar.gz)」是自动生成的，删不掉，不用管。
 - **首版 release 正文写全功能**：正式版是给外面人看的第一眼，按 README 的功能表分块写（核心业务 / 像个软件 / 授权 / 数据在哪），比一串 commit 有用。
-- **试用条里的「填激活码」按钮（1.0.1）**：`AppShell.tsx` 的 license-bar 加 `license-bar-btn`（`Icon name="key"`，icons.tsx 新增 key 图标）→ 打开 `src/components/LicenseDialog.tsx`（Modal：机器码 + 复制（`copyText()` 兼容 http）+ textarea 粘码 + Ctrl+Enter 提交 + `POST /api/license {cdk}`）。`POST` 返回 `{ ok, state, error }`，`state` 直接 `setState`，成功后 `onLicensed` 触发 `refreshLic()` 重拉横幅。**文案要点**：试用里别吓人（「现在功能不受限」「到期前随便哪天填都行」），locked 才说「试用已结束」；机器码是本机信息，展示成大写 + 等宽 + 虚线框。**主题坑**：license-bar 用的 `--warn-ink` 此前只有 `var(--warn-ink, #7a4a0d)` 这种「变量不存在时才取」的写法，深色 `:root[data-theme="dark"]` 从没定义过它 → 深色下真值是回退的浅色深棕 #7a4a0d，棕字配深棕底几乎看不见；修法是在浅色 `:root`、深色 `:root[data-theme="dark"]`（#f2c88d）和 `@media print` 三处都显式定义。**这回退值写法掩盖「变量没定义」**——以后新 token 三处都要落，别只写 var(...) 拍脑袋。
-- **`--quit` 信号被吞掉（1.0.1 修）**：`launcher\Launcher.cs` 的 `StartWaiter` 里 `f.BeginInvoke(...)` 在窗口句柄还没创建时（`StartWaiter(f)` 紧跟 `Application.Run(f)`，句柄是 `Run` 里才建的）会抛异常；老代码写的是 `catch { return; }`——守线程直接收工，**「退出」这个信号等于被吃掉，进程一直赖着不退**（表现：`AfterSchool.exe --quit` 立刻 exit 0，但原进程 20 多秒还活着、`app.db-wal` 379072 不归零，只能靠卸载器的 Kill 兜底）。改成「投递重试」：失败就 `Thread.Sleep(150)` 再试，最多 120 次，只有 `f.IsDisposed` 才收工。教训：**后台线程往 UI 线程投递，被销毁以外原因的异常不能当成「窗口没了」直接退出**。
+- **试用条里的「填激活码」按钮（1.0.0）**：`AppShell.tsx` 的 license-bar 加 `license-bar-btn`（`Icon name="key"`，icons.tsx 新增 key 图标）→ 打开 `src/components/LicenseDialog.tsx`（Modal：机器码 + 复制（`copyText()` 兼容 http）+ textarea 粘码 + Ctrl+Enter 提交 + `POST /api/license {cdk}`）。`POST` 返回 `{ ok, state, error }`，`state` 直接 `setState`，成功后 `onLicensed` 触发 `refreshLic()` 重拉横幅。**文案要点**：试用里别吓人（「现在功能不受限」「到期前随便哪天填都行」），locked 才说「试用已结束」；机器码是本机信息，展示成大写 + 等宽 + 虚线框。**主题坑**：license-bar 用的 `--warn-ink` 此前只有 `var(--warn-ink, #7a4a0d)` 这种「变量不存在时才取」的写法，深色 `:root[data-theme="dark"]` 从没定义过它 → 深色下真值是回退的浅色深棕 #7a4a0d，棕字配深棕底几乎看不见；修法是在浅色 `:root`、深色 `:root[data-theme="dark"]`（#f2c88d）和 `@media print` 三处都显式定义。**这回退值写法掩盖「变量没定义」**——以后新 token 三处都要落，别只写 var(...) 拍脑袋。
+- **`--quit` 信号被吞掉（1.0.0 修）**：`launcher\Launcher.cs` 的 `StartWaiter` 里 `f.BeginInvoke(...)` 在窗口句柄还没创建时（`StartWaiter(f)` 紧跟 `Application.Run(f)`，句柄是 `Run` 里才建的）会抛异常；老代码写的是 `catch { return; }`——守线程直接收工，**「退出」这个信号等于被吃掉，进程一直赖着不退**（表现：`AfterSchool.exe --quit` 立刻 exit 0，但原进程 20 多秒还活着、`app.db-wal` 379072 不归零，只能靠卸载器的 Kill 兜底）。改成「投递重试」：失败就 `Thread.Sleep(150)` 再试，最多 120 次，只有 `f.IsDisposed` 才收工。教训：**后台线程往 UI 线程投递，被销毁以外原因的异常不能当成「窗口没了」直接退出**。
 - **仓库在发 v1.0.0 时从私有改成公开**（用户选的）。改之前先审计：`git ls-files` 里没有 `.gh-token.txt`、`.gitee-token.txt`、`.keys/`、`data/license.json`、`data/trial.json`（都在 `.gitignore`）；`git log -S "ghp_" / "github_pat_" / "PRIVATE KEY" / "cdk-private"` 只命中文档里的**路径字符串**，没有真值；186 个跟踪文件全过一遍。改完匿名复核：release 页 **200**、下载链接 **206**（带 Range）、`api.github.com/.../releases/latest` **200**。**代价**：`TRIAL_SECRET` 这类写死在源码里的本地校验密钥也公开了——本来删 `trial.json` 就能重置 7 天，真正的门是 CDK 私钥（`E:\after-school\.keys\cdk-private.pem`，永不进库）。**以后往仓库里加东西，先问一句「这个能不能给外人看」**。
+- **激活流程里露出作者邮箱**：`LicenseDialog.tsx` 顶部 `const AUTHOR_MAIL = "nekoosu2021@outlook.com"`，第一步下面一行 `.license-dlg-mail` 显示成可点的 `mailto:`，**主题+正文都预填**（`?subject=激活码申请：课后服务管理&body=机器码 1：XXXX…`，正文里还留了「机器码 2」的空位），省得对方复制完还要找收件人。文案里凡是「发给作者」的地方（横幅 locked 态、手册「试用与激活」、README、`使用说明.txt`）都写成显式邮箱。**别只写「发给作者」**——用户根本不知道发给谁，这是实测被问到的第一个问题。
+
+## 48. 同版本号覆盖发布（只当 bug 修，不单独发版）
+
+用户（m15371）：「先不发布……写完给我看一下软件没问题再合并到 v1.0.0 里，这次只算 bug 不算新版本，所以也不需要单独发布，下载文件直接按新的来，但是还算 v1.0.0，所以直接替换。」
+
+- **口径**：1.0.1 这一轮的改动（填激活码按钮、深色可读性、`--quit` 被吞、作者邮箱）全部并回 **1.0.0**——`src\lib\version.ts` 的 `APP_VERSION` 保持 `1.0.0`，dist、zip、release 都还是 `after-school-1.0.0.zip`，**只是文件内容变新了**。
+- **替换的动手顺序**：删 release `v1.0.1`（443790395）+ 删 tag `v1.0.1` → 删 v1.0.0 上旧的 asset（741978259）→ 重新 `curl -X POST uploads.github.com/.../releases/443745748/assets?name=after-school-1.0.0.zip` 传新 zip → 改 release 正文（把新功能并进首版描述）。
+- **代价（想清楚再用）**：`update.json` 里还是 `1.0.0`，`/api/update` 的 `compare()` 认为「已是最新」，**已经装了旧 1.0.0 的用户查不到更新，得手动重新下载覆盖安装**。所以这套「同版本号覆盖」只适合**早期、用户极少**的阶段；一旦有真实用户在用，必须递增版本号。
+- **文档里别留版本标记**：写「1.0.1 起」这种话在合并后就自相矛盾了，直接描述行为（「那条提醒右边有『填激活码』按钮」）。
+
+## 49. 安装向导只留「描述 / 进度 / 取消」（去掉「换一个…」）
+
+用户（m00002）：「课后服务app的安装包，应该点击安装之后只有软件的描述 进度 还有取消按钮，不然我点击其他（换一个）按钮还会安装失败」——旧向导里 `btnBrowse.Text = "换一个…"` 会弹 `FolderBrowserDialog` 让人改安装目录（`Browse()`），选到 `C:\Program Files`、正在被占用的目录等，复制就抛异常，装不上。
+
+- **改法**（`launcher\Installer.cs` 的 `InstallForm`）：删掉目录输入框 `txt`、「换一个…」按钮 `btnBrowse`、以及 `Browse()` 方法；安装目录固定 `DefaultDir()`（`%LOCALAPPDATA%\课后服务管理`），只留一个只读的「安装位置」Label 让人看见装到哪。命令行 `/D=目录`、`--dir=目录` 仍然保留——只给脚本/自动测试用，界面不暴露。**保留这两个参数是为了不破坏 §46 的静默安装与实测链**。
+- **点「开始安装」之后**：`btnGo.Visible = false`，界面上只剩品牌条里的软件描述、进度条、状态文字和[取消]——正好是用户要的「只有描述 进度 取消」。取消按钮置 `canceled` 标志，`progress` 回调里检测到就抛 `OperationCanceledException` 把 `Setup.Run` 的复制循环中断，状态显示「已取消，什么都没装。」（已经复制出去的文件不回滚，`Setup.Run` 的 `catch` 里做清理）；装完不再弹任何 `MessageBox`（旧版弹「装好了」，用户点掉才结束），改为按钮变「打开」/「关闭」。
+- **验证**：临时复制成 `dist\安装-test.exe` 跑起来截图（初始 / 点开始后 / 取消后），三张图在 `.tmp\installer-test\`（`installer-ui-1.png`、`installer-ui-2-installing.png`、`installer-ui-3-canceled.png`）；编译产物 `安装.exe` **22,528 字节**（旧版 23,040）。
+- **打包时踩的坑**：`Compress-Archive dist\*` 会被 `dist\app\data\app.db` 的**文件锁**卡住（`ZipArchiveHelper : 文件"…app.db"正由另一进程使用`）——测试跑过一次 `dist\AfterSchool.exe` 就会留下常驻的 `node.exe` 和 `app.db`。**打 zip 前先停掉 `Path -like "E:\after-school\dist\*"` 的进程，再删掉 `dist\app\data` 整个目录**（那是测试残渣，安装器 `Installer.cs:155-156` 装完会自己 `CreateDirectory` 建 `app\data`；带上别人的 `app.db` 出厂等于让用户一打开就看到别人的账本）。
+- **产物**：`dist\安装.exe` 换成新版；`release\windows\after-school-1.0.0.zip` 重打（**133,601,177 字节**）——按 §48 的口径版本号仍是 1.0.0、文件名不变。旧的 `after-school-1.0.1.zip` 按「release 里只放一个 zip」的规矩移走（内容已被新包取代）。GitHub release 上的 asset 若要同步，才需要重新 curl 上传。
+
+## 50. 下载会把页面「弄崩」成 ErrorPage（WebView2 导航误判，1.0.0 修）
+
+用户（m15570 截图）：点「下载」后 Edge 气泡里出现 `.db` 文件，页面同时弹了桌面壳的 ErrorPage「后台服务还没起来（ConnectionAborted）」。**根因**：WebView2 里 `<a href="/api/…">` 这类下载会让那次导航以 `ConnectionAborted` 收尾，`Launcher.cs` 的 `NavigationCompleted` 只看 `!a.IsSuccess` 就 `NavigateToString(ErrorPage(...))`——把「下载」误判成「服务挂了」。修法两层，两层都在：
+
+- **前端（治本）**：`src\lib\client.ts` 的 `downloadFile(url, fallbackName)`——fetch→blob→`URL.createObjectURL`→`<a download>` 点击，全程不产生导航；非 2xx 把 JSON 的 `error` 抛出来；从 `Content-Disposition` 解析文件名（`filename*=UTF-8''` 优先）。`src\components\ui.tsx` 的 `useDownload()` 包一层 toast（「已存到下载文件夹：…」）。**settings/首页/monthly/calendar/classes/students/records/plans 共 12 处 `<a href="/api/*">` 和 `window.open` 全部换掉，设置页 `anchorCount` 应为 0**。规则：**以后页面里所有下载都走 `downloadFile`，不准 `<a href="/api/*">` 或 `window.open`**。
+- **壳（兜底）**：`Launcher.cs` 加 `core.DownloadStarting`（存 Downloads、`UniquePath()` 重名加 (2)、`a.Handled=true`、完成 Balloon 提示），`NavigationCompleted` 里 `WebErrorStatus == ConnectionAborted && (UtcNow - lastDownloadUtc) < 20s` 时不弹 ErrorPage——防漏网下载。
+- **无头验证的坑**：壳起的 3210 端口带 `AS_GATE`，浏览器直连时数据接口全 403、页面只剩「刷新」——**这不是页面坏**。验证 DOM 要另起 `next start -p 3331`（装好的 app 目录、无 gate；要看试用态/机器码就先设 `$env:AS_MACHINE`）。下载实测看 `Page.downloadWillBegin` 次数 + `navigationsAfter === 0`。
+- **打包脚本的坑**：`package.ps1` 的 csc 编 `安装.exe` 时**必须把 `launcher\Ui.cs` 一起编**（`InstallForm : AfterSchoolUi.ModernForm`），漏了报 `CS0246: 未找到命名空间 AfterSchoolUi`——已经写进 csc 行，改安装器 UI 时别把它拆出去。

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/icons";
-import { Avatar, Badge, Btn, Card, Empty, Field, Modal, PageLoading, useToast } from "@/components/ui";
+import { Avatar, Badge, Btn, Card, Empty, Field, Modal, PageLoading, useDownload, useToast } from "@/components/ui";
 import { api, post } from "@/lib/client";
 import { LESSON_STATUS_CN, durationText, mdText, timeOf } from "@/lib/format";
 
@@ -64,6 +64,7 @@ type View = "week" | "month";
 
 export default function CalendarPage() {
   const toast = useToast();
+  const download = useDownload();
   const [view, setView] = useState<View>("week");
   const [anchor, setAnchor] = useState(() => new Date()); // 当前定位到的某天
   const [lessons, setLessons] = useState<LessonItem[] | null>(null);
@@ -393,10 +394,13 @@ export default function CalendarPage() {
               复制到下周
             </Btn>
           ) : null}
-          <a className="btn" href={`/api/calendar.ics?from=${range.from}&to=${range.to}`} title="下载 .ics，导进手机日历当提醒">
-            <Icon name="calendar" size={16} />
+          <Btn
+            icon="calendar"
+            title="下载 .ics，导进手机日历当提醒"
+            onClick={() => download(`/api/calendar.ics?from=${range.from}&to=${range.to}`, "课表.ics")}
+          >
             导出日历
-          </a>
+          </Btn>
           <a className="btn" href={`/calendar/print?from=${range.from}&to=${range.to}`}>
             <Icon name="printer" size={16} />
             打印课表

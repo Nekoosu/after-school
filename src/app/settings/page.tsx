@@ -5,7 +5,7 @@ import { Icon } from "@/components/icons";
 import { ApiCard } from "@/components/ApiCard";
 import { ImportModal } from "@/components/ImportModal";
 import { Btn, Card, CardHead, Confirm, Field, PageLoading, Section, useToast } from "@/components/ui";
-import { api, del, patch, post } from "@/lib/client";
+import { api, del, downloadFile, patch, post } from "@/lib/client";
 import { toHours, weekdayLabel } from "@/lib/format";
 import { API_VERSION, APP_VERSION } from "@/lib/version";
 import { AUTHOR_NAME, AUTHOR_URL } from "@/lib/author";
@@ -267,6 +267,16 @@ export default function SettingsPage() {
       toast.bad((e as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  /** 从后端拉附件并存下来（备份 .db、导出 CSV/JSON）。 */
+  async function saveFile(url: string, fallback?: string) {
+    try {
+      const name = await downloadFile(url, fallback ?? "下载");
+      toast.ok(`已存到下载文件夹：${name}`);
+    } catch (e) {
+      toast.bad((e as Error).message);
     }
   }
 
@@ -571,13 +581,16 @@ export default function SettingsPage() {
                         >
                           <Icon name="refresh" size={14} />
                         </button>
-                        <a
+                        <button
+                          type="button"
                           className="btn btn-sm"
-                          href={`/api/backup?file=${encodeURIComponent(f.name)}`}
                           title="下载这份"
+                          onClick={() =>
+                            saveFile(`/api/backup?file=${encodeURIComponent(f.name)}`, f.name)
+                          }
                         >
                           <Icon name="download" size={14} />
-                        </a>
+                        </button>
                         <button
                           type="button"
                           className="btn btn-sm btn-danger-ghost"
@@ -651,37 +664,30 @@ export default function SettingsPage() {
               <CardHead title="带走与带回" icon="download" sub="导出去存着，换电脑时再导回来" />
               <div className="card-body">
                 <div className="row wrap" style={{ gap: 8 }}>
-                  <a className="btn btn-primary btn-sm" href="/api/backup">
-                    <Icon name="download" size={15} />
+                  <Btn size="sm" variant="primary" icon="download" onClick={() => saveFile("/api/backup")}>
                     下载当前快照
-                  </a>
+                  </Btn>
                   <Btn size="sm" icon="file" onClick={exportStudents}>
                     导出学生名单 CSV
                   </Btn>
-                  <a className="btn btn-sm" href="/api/export?scope=students&format=csv">
-                    <Icon name="download" size={15} />
+                  <Btn size="sm" icon="download" onClick={() => saveFile("/api/export?scope=students&format=csv")}>
                     学生名册（带余额）
-                  </a>
-                  <a className="btn btn-sm" href="/api/export?scope=payments">
-                    <Icon name="download" size={15} />
+                  </Btn>
+                  <Btn size="sm" icon="download" onClick={() => saveFile("/api/export?scope=payments")}>
                     收款记录 CSV
-                  </a>
-                  <a className="btn btn-sm" href="/api/export?scope=records">
-                    <Icon name="download" size={15} />
+                  </Btn>
+                  <Btn size="sm" icon="download" onClick={() => saveFile("/api/export?scope=records")}>
                     上课记录 CSV
-                  </a>
-                  <a className="btn btn-sm" href="/api/export?scope=plans">
-                    <Icon name="download" size={15} />
+                  </Btn>
+                  <Btn size="sm" icon="download" onClick={() => saveFile("/api/export?scope=plans")}>
                     教案 JSON
-                  </a>
-                  <a className="btn btn-sm" href="/api/export?scope=classes">
-                    <Icon name="download" size={15} />
+                  </Btn>
+                  <Btn size="sm" icon="download" onClick={() => saveFile("/api/export?scope=classes")}>
                     班级 JSON
-                  </a>
-                  <a className="btn btn-sm" href="/api/export">
-                    <Icon name="download" size={15} />
+                  </Btn>
+                  <Btn size="sm" icon="download" onClick={() => saveFile("/api/export")}>
                     导出全部数据 JSON
-                  </a>
+                  </Btn>
                 </div>
 
                 <div className="divider" style={{ margin: "14px 0 12px" }} />

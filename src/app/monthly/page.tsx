@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Avatar, Badge, Btn, Card, CardHead, Empty, PageLoading, Section, Stat } from "@/components/ui";
+import { Avatar, Badge, Btn, Card, CardHead, Empty, PageLoading, Section, Stat, useDownload } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { api } from "@/lib/client";
 import { money } from "@/lib/format";
@@ -57,6 +57,7 @@ function monthCn(month: string): string {
 }
 
 export default function MonthlyPage() {
+  const download = useDownload();
   const [month, setMonth] = useState(() => monthOf(new Date()));
   const [rows, setRows] = useState<Row[] | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -118,10 +119,12 @@ export default function MonthlyPage() {
               下月
             </Btn>
           </div>
-          <a className="btn" href={`/api/reports/monthly?month=${month}&format=csv`}>
-            <Icon name="download" size={16} />
+          <Btn
+            icon="download"
+            onClick={() => download(`/api/reports/monthly?month=${month}&format=csv`, `月报-${month}.csv`)}
+          >
             导出 CSV
-          </a>
+          </Btn>
           <Btn icon="printer" onClick={() => window.print()}>
             打印
           </Btn>

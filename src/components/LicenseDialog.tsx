@@ -14,9 +14,12 @@ export interface LicState {
   seats?: number | null;
 }
 
+/** 作者的收码邮箱：界面上直接露出来，省得用户再问「发给谁」。 */
+const AUTHOR_MAIL = "nekoosu2021@outlook.com";
+
 /**
- * 激活窗（1.0.1）：试用条右边的「填激活码」直接打开，不必等到期才填。
- * 流程：看清机器码 → 粘贴激活码 → 点「激活」，验签与写文件都在本机，全程不联网。
+ * 激活窗：试用条右边的「填激活码」直接打开，不必等到期才填。
+ * 流程：看清机器码 → 发到作者邮箱 → 粘回激活码 → 点「激活」，验签与写文件都在本机，全程不联网。
  */
 export function LicenseDialog({
   open,
@@ -80,6 +83,17 @@ export function LicenseDialog({
   }
 
   const machine = String(state?.machine || "");
+  const mailtoHref =
+    "mailto:" +
+    AUTHOR_MAIL +
+    "?subject=" +
+    encodeURIComponent("激活码申请：课后服务管理") +
+    "&body=" +
+    encodeURIComponent(
+      (machine ? "机器码 1：" + machine.toUpperCase() + "\n" : "机器码 1：\n") +
+        "机器码 2：（第二台电脑的填这里，只有一台就留空）\n\n" +
+        "有什么想说明的写在下面这行：\n",
+    );
   const head =
     state?.mode === "licensed"
       ? {
@@ -128,7 +142,7 @@ export function LicenseDialog({
                 onClick={async () => {
                   try {
                     await copyText(machine.toUpperCase());
-                    toast.ok("机器码已复制，发给作者就行");
+                    toast.ok("机器码已复制，发到 " + AUTHOR_MAIL + " 就行");
                     setCopied(true);
                   } catch (e) {
                     toast.bad(String((e as Error)?.message || e));
@@ -143,6 +157,10 @@ export function LicenseDialog({
               <span className="muted">这台电脑拿不到机器码：请用桌面程序打开，别用浏览器直连。</span>
             </div>
           )}
+          <div className="license-dlg-mail">
+            作者邮箱：<a href={mailtoHref}>{AUTHOR_MAIL}</a>
+            {machine ? <span className="muted">　点邮箱直接写邮件，机器码会帮你填好</span> : null}
+          </div>
           <div className="license-dlg-note">一个激活码最多绑两台电脑；激活以后不用联网，也不上报任何东西。</div>
         </div>
 

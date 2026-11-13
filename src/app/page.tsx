@@ -6,7 +6,7 @@ import { Icon } from "@/components/icons";
 import { MakeupModal, type MakeupTarget } from "@/components/MakeupModal";
 import { Sparkline } from "@/components/Sparkline";
 import { Avatar, Badge, Card, Empty, PageLoading, Section, Stat, useToast } from "@/components/ui";
-import { api, copyText, patch } from "@/lib/client";
+import { api, copyText, downloadFile, patch } from "@/lib/client";
 import {
   LESSON_STATUS_CN,
   NOTE_KIND_CN,
@@ -571,10 +571,21 @@ export default function TodayPage() {
         <span className="muted fs-xs">
           记一笔学情只要十秒，攒起来就是写给家长的话。数据都在你自己电脑里。
         </span>
-        <a href="/api/backup" className="btn btn-sm btn-ghost">
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost"
+          onClick={async () => {
+            try {
+              const name = await downloadFile("/api/backup");
+              toast.ok(`已存到下载文件夹：${name}`);
+            } catch (e) {
+              toast.bad((e as Error).message);
+            }
+          }}
+        >
           <Icon name="download" size={14} />
           备份数据
-        </a>
+        </button>
       </div>
 
       <MakeupModal target={makeupTarget} onClose={() => setMakeupTarget(null)} onCreated={load} />

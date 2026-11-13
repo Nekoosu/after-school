@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Avatar, Badge, Btn, Card, CardHead, Confirm, Empty, Field, Modal, PageLoading, Section, useToast } from "@/components/ui";
-import { api, del, patch, post } from "@/lib/client";
+import { Avatar, Badge, Btn, Card, CardHead, Confirm, Empty, Field, Modal, PageLoading, Section, useDownload, useToast } from "@/components/ui";
+import { api, del, downloadFile, patch, post } from "@/lib/client";
 import { ImportModal } from "@/components/ImportModal";
 import { durationText, weekdayLabel } from "@/lib/format";
 import { useAutoNew } from "@/lib/autoNew";
@@ -46,6 +46,7 @@ const EMPTY_FORM = {
 
 export default function ClassesPage() {
   const toast = useToast();
+  const download = useDownload();
   const [classes, setClasses] = useState<ClassItem[] | null>(null);
   const [courses, setCourses] = useState<CourseLite[]>([]);
   const [students, setStudents] = useState<StudentLite[]>([]);
@@ -221,7 +222,7 @@ export default function ClassesPage() {
           <p className="page-sub">把固定一起上课的学生放一个班，之后按班排课一键搞定。</p>
         </div>
         <div className="page-head-actions">
-          <Btn icon="download" onClick={() => window.open("/api/export?scope=classes", "_blank")}>
+          <Btn icon="download" onClick={() => download("/api/export?scope=classes", "班级.json")}>
             导出
           </Btn>
           <Btn icon="upload" onClick={() => setImportOpen(true)}>

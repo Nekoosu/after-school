@@ -98,11 +98,11 @@ $instText = [System.IO.File]::ReadAllText($instSrc)
 if ($instText.Contains("__VER__")) { $instText = $instText.Replace("__VER__", $ver) }
 $instGen = Join-Path $env:TEMP ("Installer." + $ver + ".cs")
 [System.IO.File]::WriteAllText($instGen, $instText, [System.Text.UTF8Encoding]::new($false))
-& $csc /nologo /target:winexe /platform:anycpu /codepage:65001 /win32icon:$ico /out:$installer /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll $instGen
+& $csc /nologo /target:winexe /platform:anycpu /codepage:65001 /win32icon:$ico /out:$installer /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll $instGen (Join-Path $root "launcher\Ui.cs")
 if ($LASTEXITCODE -ne 0) { throw "csc installer failed" }
 Remove-Item -Force $instGen -ErrorAction SilentlyContinue
 $uninstIco = Join-Path $root "public\app.ico"
-& $csc /nologo /target:winexe /platform:anycpu /codepage:65001 /win32icon:$uninstIco /out:$uninstaller /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll $uninstSrc
+& $csc /nologo /target:winexe /platform:anycpu /codepage:65001 /win32icon:$uninstIco /out:$uninstaller /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll $uninstSrc (Join-Path $root "launcher\Ui.cs")
 if ($LASTEXITCODE -ne 0) { throw "csc uninstaller failed" }
 
 Step "9/9 copy the plain-text readme next to the exe"
