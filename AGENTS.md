@@ -887,3 +887,22 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 - **`Program.Main` 两个都要 `AfterSchoolUi.Dpi.Init()`**，否则 125% / 150% 缩放下 720×480 的窗口会被系统拉伸发虚。
 - **产物**：`dist\安装.exe` **36,864 字节**、`dist\卸载.exe` **33,280 字节**；`release\windows\after-school-1.0.0.zip` 重打（版本号仍是 1.0.0，按 §48 同版本覆盖）。
 - **验证**：截图一律用 `PrintWindow(hwnd, hdc, 2)`——`CopyFromScreen` 抓到的是未合成帧，body / foot 会露出背后窗口的内容。截图存档在 `.tmp\installer-test\`，工作区 `installer-ui\v2-*.png` 是同一份。卸载器的备份链路实测过：勾选后桌面会出现 `课后服务管理-账本备份-yyyyMMdd-HHmm.db`（40,000 字节的测试库原样拷出），`--silent` 卸载 exit=0、目录 / 快捷方式 / 注册表项全部消失。
+
+## 52. 卸载器加「保留账本数据」选项（不删 app\data）
+
+用户（m00883）：「卸载器里面能加一个保留数据的选项吗」。
+
+- **`DoUninstall` 签名再变一次**：`internal static string DoUninstall(string dir, Action<string> stage, bool keepData)`。`--silent` / `/S` 调用传 `false`（静默仍是全删，脚本语义不变）；界面路径读勾选框状态传进来。
+- **确认页两个勾选框**（都只在 `app\data\app.db` 存在且 >30000 字节时出现，页面坐标见 `BuildConfirm()`）：
+  - `chkKeep` y=232：「保留账本数据（app\data 不删，以后重装能接上）」——勾上时清单第三行实时从「整个安装目录，包括 app\data\app.db 账本」变成「安装目录里的程序文件（app\data 账本留着）」，底栏提示同步换成「账本会留在原目录，只删程序文件。」
+  - `chkBackup` y=260：「同时备份一份到桌面（换机器、重装前留个底）」——和保留可以同时勾。
+- **保留路径的实现是 `DelKeepData(DirectoryInfo root)` 逐项递归删**（跳过根目录的 `卸载.exe`、`app\data`），不是 `robocopy /MIR /XD`：**robocopy 的 `/XD` 在 `/MIR` 下仍可能把排除目录一起清掉，不可靠**。删完只留下 `app\data\` 和 `卸载.exe`，外层目录与 `app\` 目录本身保留。
+- **删自己必须等窗口关掉**：`卸载.exe` 在进程活着时删不动，`DoUninstall` 里那次 `cmd /c ping & del` 是给 `--silent` 用的（进程马上退出）。界面路径新增 `Program.CleanupOnExit(string dir, bool keepData)`，在 `UninstallForm.OnFormClosing` 里 `finished == true` 时再调度一次（保留 → `del` 自己；全删 → `rd /s /q` 整个目录）。**`busy` 时 `e.Cancel = true`，卸载进行中不许关窗**，否则 `DoEvents` 循环后再访问控件会炸。
+- **完成页四分支文案**：保留+备份（「程序文件清掉了；账本留在原目录，桌面也存了一份：」+ 文件名）/ 只保留（「程序文件清掉了，账本还留在 app\data 里，重装后能接上。」）/ 只备份 / 都没有。脚注在保留时变「想再装一遍，双击安装包就行，账本会自动接上。」
+- **顶栏副标题**改成「账本在 app\data，可以留着下次重装接着用，也可以一起删掉」（原来写的是「卸载时会删掉，先备份好」，有了保留选项就不准了）。
+- **产物**：`dist\卸载.exe` **35,840 字节**（+2,560）；`release\windows\after-school-1.0.0.zip` 重打 = **133,458,708 字节**（9,822 条目，zip 内不含 `app\data`）。
+- **三条路径都实测过**（测试目录 = `AfterSchool.exe` + `app\node.exe` + 40,000 字节 `app\data\app.db` + `卸载.exe`）：
+  1. 都不勾 → 关闭后整个目录消失、`卸载.exe` 也被删、进程退出。
+  2. 只勾保留 → 关闭后只剩 `app\data\app.db`，`卸载.exe` 被延时删掉。
+  3. 保留 + 备份 → 目录只剩 `app.db`，桌面多一份 `课后服务管理-账本备份-yyyyMMdd-HHmm.db`（40,000 字节）。
+- **截图**：`.tmp\installer-test\un-keep-7-checked.png`（勾选态 + 清单第三行变化）、`un-keep-8-done.png`（保留路径完成页）。
