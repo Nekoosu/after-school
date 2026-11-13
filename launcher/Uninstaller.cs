@@ -16,8 +16,9 @@ namespace AfterSchoolUninstall
     /// 把自己所在的整个目录删掉（用 cmd 延时删，因为 exe 自己正在运行没法删自己）。
     ///
     /// 账本数据在 app\data\app.db，删目录就一起没了，所以有数据时可以先勾选备份到桌面。
-    /// 用法：卸载.exe          向导
-    ///       卸载.exe --silent 不问，全删（自动测试与 QuietUninstallString 用）
+    /// 用法：卸载.exe                向导
+    ///       卸载.exe --silent       不问，全删（自动测试与 QuietUninstallString 用）
+    ///       卸载.exe --silent --keep-data  不问，只删程序文件，app\data 账本留着（重装能接上）
     /// </summary>
     static class Program
     {
@@ -32,16 +33,25 @@ namespace AfterSchoolUninstall
             AfterSchoolUi.Dpi.Init();
 
             bool silent = false;
+            bool keepData = false;
             for (int i = 0; i < args.Length; i++)
             {
                 string a = args[i] == null ? "" : args[i];
                 if (a.Equals("--silent", StringComparison.OrdinalIgnoreCase) || a.Equals("/S", StringComparison.OrdinalIgnoreCase)) silent = true;
+                if (a.Equals("--keep-data", StringComparison.OrdinalIgnoreCase)) keepData = true;
             }
 
             string dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             if (silent)
             {
-                Environment.ExitCode = DoUninstall(dir, null) == null ? 0 : 1;
+                string err = DoUninstall(dir, null, keepData);
+                Environment.ExitCode = err == null ? 0 : 1;
+                // 静默模式下没人看得到失败原因，留一份在 %TEMP% 里方便排查
+                if (err != null)
+                {
+                    try { File.WriteAllText(Path.Combine(Path.GetTempPath(), "as-uninstall-error.txt"), err); }
+                    catch { }
+                }
                 return;
             }
 
@@ -53,7 +63,8 @@ namespace AfterSchoolUninstall
         }
 
         /// <summary>真的卸载。返回 null = 卸完了，否则是给人看的失败原因。</summary>
-        internal static string DoUninstall(string dir, Action<string> stage)
+        /// <param name="keepData">true = 只删程序文件，app\data 账本目录原样留着（重装能接上）。</param>
+        internal static string DoUninstall(string dir, Action<string> stage, bool keepData)
         {
             string exe = Path.Combine(dir, "AfterSchool.exe");
 
@@ -96,8 +107,38 @@ namespace AfterSchoolUninstall
             catch { }
 
             // 4) 目录：先杀掉可能残留的 node.exe（只杀 app 目录下的），再交给 cmd 延时删
-            Step(stage, "正在删文件，这一步最慢…");
+            //    「保留账本」时走另一条路：逐项删，唯独跳过 app\data（robocopy /XD 试过，会被 /MIR 一起清掉，不可靠）。
             KillUnder(Path.Combine(dir, "app"), "node");
+
+            string dataDir = Path.Combine(dir, "app", "data");
+            if (keepData && Directory.Exists(dataDir))
+            {
+                Step(stage, "正在删程序文件，账本留着…");
+                try
+                {
+                    DelKeepData(new DirectoryInfo(dir));
+                }
+                catch (Exception e)
+                {
+                    return "删程序文件时出错：" + e.Message.TrimEnd('。') + "。账本还在：" + dataDir;
+                }
+                // 卸载.exe 自己还开着删不掉，交给 cmd 等几秒再删；账本目录和它所在的外层目录留着。
+                try
+                {
+                    ProcessStartInfo psi = new ProcessStartInfo("cmd.exe");
+                    psi.Arguments = "/c ping -n 4 127.0.0.1 >nul & del /f /q \"" +
+                        Path.Combine(dir, "卸载.exe") + "\"";
+                    psi.WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.System);
+                    psi.WindowStyle = ProcessWindowStyle.Hidden;
+                    psi.UseShellExecute = false;
+                    psi.CreateNoWindow = true;
+                    Process.Start(psi);
+                }
+                catch { }
+                return null;
+            }
+
+            Step(stage, "正在删文件，这一步最慢…");
             try
             {
                 ProcessStartInfo psi = new ProcessStartInfo("cmd.exe");
@@ -119,6 +160,64 @@ namespace AfterSchoolUninstall
         static void Step(Action<string> stage, string text)
         {
             if (stage != null) stage(text);
+        }
+
+        /// <summary>进程退出后再删一次：删自己 / 删整个目录。窗口关闭时调用，--silent 已由 DoUninstall 调度过，这里重复一次也无害。</summary>
+        internal static void CleanupOnExit(string dir, bool keepData)
+        {
+            try
+            {
+                string cmd = keepData
+                    ? "ping -n 3 127.0.0.1 >nul & del /f /q \"" + Path.Combine(dir, "卸载.exe") + "\""
+                    : "ping -n 3 127.0.0.1 >nul & rd /s /q \"" + dir + "\"";
+                ProcessStartInfo psi = new ProcessStartInfo("cmd.exe");
+                psi.Arguments = "/c " + cmd;
+                psi.WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.System);
+                psi.WindowStyle = ProcessWindowStyle.Hidden;
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                Process.Start(psi);
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 删掉安装目录里所有东西，唯独留着 app\data（账本）。外层目录和 app 目录本身留着，卸载.exe 也留着（它还在跑，交给 cmd 延后删）。
+        /// </summary>
+        static void DelKeepData(DirectoryInfo root)
+        {
+            foreach (FileSystemInfo fsi in root.GetFileSystemInfos())
+            {
+                if (fsi.Name == "卸载.exe") continue;   // 自己还开着
+                DirectoryInfo d = fsi as DirectoryInfo;
+                if (d != null && d.Name == "app")
+                {
+                    foreach (FileSystemInfo inner in d.GetFileSystemInfos())
+                    {
+                        if (inner.Name == "data") continue;   // 账本
+                        DelTree(inner);
+                    }
+                    continue;
+                }
+                DelTree(fsi);
+            }
+        }
+
+        /// <summary>递归删一个文件或目录（先清掉只读、隐藏属性，免得删不动）。</summary>
+        static void DelTree(FileSystemInfo fsi)
+        {
+            try { fsi.Attributes = FileAttributes.Normal; }
+            catch { }
+            DirectoryInfo d = fsi as DirectoryInfo;
+            if (d != null)
+            {
+                foreach (FileSystemInfo c in d.GetFileSystemInfos()) DelTree(c);
+                d.Delete(true);
+            }
+            else
+            {
+                fsi.Delete();
+            }
         }
 
         static void TryDelete(string path)
@@ -161,10 +260,11 @@ namespace AfterSchoolUninstall
         AfterSchoolUi.ProgressBarEx bar;
         Label lblDesc, lblPath, lblStage, lblNote, lblFoot, lblDoneSub;
         AfterSchoolUi.RoundedButton btnPrimary, btnSecondary;
-        AfterSchoolUi.CheckBoxEx chkBackup;
+        AfterSchoolUi.CheckBoxEx chkBackup, chkKeep;
+        Panel list;
         Panel pageConfirm, pageWorking, pageDone;
         string backupName;
-        bool busy, removed;
+        bool busy, removed, finished, keepFlag;
 
         public bool Removed { get { return removed; } }
 
@@ -213,22 +313,22 @@ namespace AfterSchoolUninstall
         {
             pageConfirm = NewPage();
 
-            Label t = NewLabel("要卸载了", 36, 24, 520, 40, AfterSchoolUi.Theme.FB(21f), AfterSchoolUi.Theme.Ink);
+            Label t = NewLabel("要卸载了", 36, 16, 520, 40, AfterSchoolUi.Theme.FB(21f), AfterSchoolUi.Theme.Ink);
             pageConfirm.Controls.Add(t);
 
-            lblDesc = NewLabel("会把这个文件夹整个删掉，里面装的是软件本体和账本数据。",
-                36, 70, 640, 24, AfterSchoolUi.Theme.F(10f), AfterSchoolUi.Theme.InkSoft);
+            lblDesc = NewLabel("默认会把这个文件夹整个删掉，里面装的是软件本体和账本数据。",
+                36, 60, 640, 22, AfterSchoolUi.Theme.F(10f), AfterSchoolUi.Theme.InkSoft);
             pageConfirm.Controls.Add(lblDesc);
 
             AfterSchoolUi.CardPanel card = new AfterSchoolUi.CardPanel();
-            card.SetBounds(36, 100, 648, 66);
+            card.SetBounds(36, 88, 648, 62);
             pageConfirm.Controls.Add(card);
 
             Label cap = new Label();
             cap.Text = "安装位置";
             cap.Font = AfterSchoolUi.Theme.F(9f);
             cap.ForeColor = AfterSchoolUi.Theme.InkFaint;
-            cap.SetBounds(20, 10, 200, 20);
+            cap.SetBounds(20, 8, 200, 20);
             card.Controls.Add(cap);
 
             lblPath = new Label();
@@ -236,20 +336,30 @@ namespace AfterSchoolUninstall
             lblPath.Text = dir;
             lblPath.Font = AfterSchoolUi.Theme.F(10.5f);
             lblPath.ForeColor = AfterSchoolUi.Theme.Ink;
-            lblPath.SetBounds(20, 32, 600, 26);
+            lblPath.SetBounds(20, 30, 600, 26);
             card.Controls.Add(lblPath);
 
-            Panel list = new Panel();
-            list.SetBounds(36, 168, 648, 74);
+            list = new Panel();
+            list.SetBounds(36, 156, 648, 72);
             list.BackColor = AfterSchoolUi.Theme.Page;
             list.Paint += ListPaint;
             pageConfirm.Controls.Add(list);
 
             if (hasData)
             {
+                chkKeep = new AfterSchoolUi.CheckBoxEx();
+                chkKeep.Text = "保留账本数据（app\\data 不删，以后重装能接上）";
+                chkKeep.SetBounds(36, 232, 648, 24);
+                chkKeep.Click += delegate
+                {
+                    if (list != null) list.Invalidate();
+                    SetHint(chkKeep.Checked ? "账本会留在原目录，只删程序文件。" : "卸载后这个文件夹就空了，可以直接删掉。", false);
+                };
+                pageConfirm.Controls.Add(chkKeep);
+
                 chkBackup = new AfterSchoolUi.CheckBoxEx();
-                chkBackup.Text = "先把账本备份到桌面（学生、课时、反馈都在 app\\data\\app.db 里）";
-                chkBackup.SetBounds(36, 248, 648, 26);
+                chkBackup.Text = "同时备份一份到桌面（换机器、重装前留个底）";
+                chkBackup.SetBounds(36, 260, 648, 24);
                 pageConfirm.Controls.Add(chkBackup);
             }
         }
@@ -321,6 +431,14 @@ namespace AfterSchoolUninstall
 
         // ---------- 流程 ----------
 
+        /// <summary>窗口关掉之后才删得掉 卸载.exe；DoUninstall 里那次调度是给 --silent 用的，界面路径等用户点关闭再兜一次。</summary>
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (busy) { e.Cancel = true; return; }
+            if (finished) Program.CleanupOnExit(dir, keepFlag);
+            base.OnFormClosing(e);
+        }
+
         void OnPrimary()
         {
             if (busy) return;
@@ -330,6 +448,8 @@ namespace AfterSchoolUninstall
 
         void Start()
         {
+            bool keep = chkKeep != null && chkKeep.Checked;
+
             if (chkBackup != null && chkBackup.Checked)
             {
                 string name = Backup();
@@ -342,7 +462,7 @@ namespace AfterSchoolUninstall
                 chkBackup.Checked = false;
             }
 
-            SetHint("卸载后这个文件夹就空了，可以直接删掉。", false);
+            SetHint(keep ? "账本会留在原目录，只删程序文件。" : "卸载后这个文件夹就空了，可以直接删掉。", false);
             busy = true;
             btnPrimary.Enabled = false;
             btnSecondary.Enabled = false;
@@ -355,7 +475,7 @@ namespace AfterSchoolUninstall
                 lblStage.Text = text;
                 bar.Invalidate();
                 Application.DoEvents();
-            });
+            }, keep);
 
             if (err != null)
             {
@@ -370,20 +490,27 @@ namespace AfterSchoolUninstall
             }
 
             removed = true;
+            finished = true;
+            keepFlag = keep;
             busy = false;
             bar.IsMarquee = false;
             bar.Value = 100;
             ShowPage(pageDone);
 
-            lblDoneSub.Text = backupName == null
-                ? "软件、快捷方式和「应用」里的登记都清掉了。"
-                : "软件都清掉了，账本备份还留在桌面上：" + backupName;
+            if (keep && backupName != null)
+                lblDoneSub.Text = "程序文件清掉了；账本留在原目录，桌面也存了一份：" + backupName;
+            else if (keep)
+                lblDoneSub.Text = "程序文件清掉了，账本还留在 app\\data 里，重装后能接上。";
+            else if (backupName == null)
+                lblDoneSub.Text = "软件、快捷方式和「应用」里的登记都清掉了。";
+            else
+                lblDoneSub.Text = "软件都清掉了，账本备份还留在桌面上：" + backupName;
 
             btnPrimary.Text = "关闭";
             btnPrimary.Kind = AfterSchoolUi.ButtonKind.Primary;
             btnPrimary.Enabled = true;
             btnSecondary.Visible = false;
-            SetHint("想再装一遍，双击安装包就行。", false);
+            SetHint(keep ? "想再装一遍，双击安装包就行，账本会自动接上。" : "想再装一遍，双击安装包就行。", false);
             Application.DoEvents();
         }
 
@@ -445,8 +572,8 @@ namespace AfterSchoolUninstall
                 new Rectangle(100, 28, 460, 30), AfterSchoolUi.Theme.Ink,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
 
-            TextRenderer.DrawText(g, "学生的课时账会在卸载时删掉，先备份好再动手",
-                AfterSchoolUi.Theme.F(9f), new Rectangle(100, 58, 520, 20),
+            TextRenderer.DrawText(g, "账本在 app\\data，可以留着下次重装接着用，也可以一起删掉",
+                AfterSchoolUi.Theme.F(9f), new Rectangle(100, 58, 560, 20),
                 AfterSchoolUi.Theme.InkFaint,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
         }
@@ -465,7 +592,9 @@ namespace AfterSchoolUninstall
             {
                 "桌面和开始菜单里的快捷方式",
                 "「应用」列表里的卸载登记",
-                "整个安装目录，包括 app\\data\\app.db 账本"
+                chkKeep != null && chkKeep.Checked
+                    ? "安装目录里的程序文件（app\\data 账本留着）"
+                    : "整个安装目录，包括 app\\data\\app.db 账本"
             };
             for (int i = 0; i < items.Length; i++)
             {
