@@ -125,10 +125,11 @@ function titleOf(pathname: string): string {
   return "课后服务";
 }
 
-function todayLabel(): string {
+function clockLabel(): string {
   const d = new Date();
   const w = ["日", "一", "二", "三", "四", "五", "六"][d.getDay()];
-  return `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 周${w}`;
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 周${w} · ${hm}`;
 }
 
 interface QuickAction {
@@ -303,7 +304,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
     applyTheme(pref, dark);
     setThemeReady(true);
-    setDateLabel(todayLabel());
 
     const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
     const onSystemChange = () => {
@@ -324,6 +324,31 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => {
       mq?.removeEventListener?.("change", onSystemChange);
       window.removeEventListener("as-theme", onThemeEvent);
+    };
+  }, []);
+
+  // 右上角的日期时间和授权横幅，以前都只在打开软件那一刻取一次——软件一开好几天，
+  // 日期就停在打开那天，试用「还剩 N 天」也不会走（1.0.0 用户反馈）。
+  // 现在 30 秒对一次系统时间（跨分钟、跨午夜都会跟上），每分钟顺手刷新一次授权状态，
+  // 切回窗口时也立刻对一次：试用到期变「已锁」、激活成功横幅消失，都不用重开软件。
+  useEffect(() => {
+    const tick = () => setDateLabel(clockLabel());
+    tick();
+    const t = window.setInterval(tick, 30000);
+    const licT = window.setInterval(refreshLic, 60000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        tick();
+        refreshLic();
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onVis);
+    return () => {
+      window.clearInterval(t);
+      window.clearInterval(licT);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onVis);
     };
   }, []);
 

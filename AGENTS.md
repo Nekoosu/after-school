@@ -926,3 +926,11 @@ $img.GetPixel(1070,400)   # 空列；修好前 #FCFCFE，修好后 #1A1F27
 - 根因：`route-cache` 是 `next start` 跑过后留下的**预渲染页面快照**，里面写死了当时的 chunk 名。`next build` 不清它、`Copy-Item -Recurse -Force` 也不会删目标目录里已存在的文件 → 旧快照被原样带进 dist、带进安装目录，服务器优先吐快照，于是永远显示旧界面。
 - 两面修：`scripts\package.ps1` 第 3 步复制完 `.next` 后加 `Remove-Item -Recurse -Force $app\.next\server\route-cache`；`launcher\Installer.cs` 的 `Run()` 在复制前删掉 `dir\app\.next`（新增 `DeleteTree(string dir)`，只读属性先复位，`app\data` 账本不动）。
 - **排查口诀**：改了前端却「看不到变化」时，先比 `BUILD_ID`，再 grep 旧 chunk 名出现在哪个文件里——只要出现在 `route-cache`，就是这个坑，别去怀疑浏览器缓存。
+
+## 55. 常驻软件的「只取一次」状态：日期和试用天数会停在打开那天（1.0.0 内）
+
+用户把软件一开一整天不关，反馈两个一起坏的现象：右上角的日期停在打开软件那天，试用「还剩 N 天」也不走（开跨了午夜也不变）。根因是同一类：`AppShell.tsx` 里 `dateLabel` 只在挂载那次 effect 里 `setDateLabel(...)`，`lic` 也只在挂载时 `fetch("/api/license")` 一次——**桌面软件是常驻的，不刷新页面，浏览器那种「下次导航自然拿到新值」在这里不存在**。
+
+- 修法（`src\components\AppShell.tsx`）：一个 effect 管两件事——`setInterval` 30 s 对一次 `clockLabel()`（含时:分，跨分钟/跨午夜都跟上）、60 s 重新 `fetch("/api/license")`；再加 `visibilitychange`/`focus` 时立刻对一次（试用到期变「已锁」、激活成功横幅消失，都不用重开软件）。
+- 试用天数本来就是服务端每次现算的（`src\lib\license.ts` 的 `licenseState()`），所以前端只要肯重新拉就一定会变；「值不会变」八成是「没人重新拉」。
+- **教训**：常驻型桌面软件里，任何「取一次就存 state」的东西（日期、时钟、天数、倒计时）都要回答一句「过午夜/过期之后谁去刷新它」。答案没有就是 bug。
